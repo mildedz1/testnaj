@@ -713,11 +713,15 @@ class Database:
                 """, (admin_id,))
                 await db.commit()
                 
+                # Get admin info for logging
+                admin = await self.get_admin_by_id(admin_id)
+                admin_user_id = admin.user_id if admin else 0
+                
                 # Log this action
                 await db.execute("""
-                    INSERT INTO logs (admin_id, action, details, timestamp) 
+                    INSERT INTO logs (admin_user_id, action, details, timestamp) 
                     VALUES (?, ?, ?, ?)
-                """, (admin_id, "consumed_time_reset", f"Reset consumed time to {new_consumed_seconds} seconds", datetime.now().timestamp()))
+                """, (admin_user_id, "consumed_time_reset", f"Reset consumed time to {new_consumed_seconds} seconds", datetime.now().timestamp()))
                 await db.commit()
                 return True
         except Exception as e:
