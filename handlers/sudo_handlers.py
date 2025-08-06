@@ -1047,14 +1047,14 @@ async def remove_admin_callback(callback: CallbackQuery):
     
     await callback.message.edit_text(
         "🗑️ انتخاب پنل برای حذف کامل (پنل و تمام کاربرانش):",
-        reply_markup=get_panel_list_keyboard(active_admins, "confirm_deactivate")
+        reply_markup=get_panel_list_keyboard(active_admins, "select_for_deletion")
     )
     await callback.answer()
 
 
-@sudo_router.callback_query(F.data.startswith("confirm_deactivate_"))
-async def confirm_deactivate_panel(callback: CallbackQuery):
-    """Confirm panel deactivation."""
+@sudo_router.callback_query(F.data.startswith("select_for_deletion_"))
+async def select_panel_for_deletion(callback: CallbackQuery):
+    """Show confirmation dialog before deletion."""
     if callback.from_user.id not in config.SUDO_ADMINS:
         await callback.answer("غیرمجاز", show_alert=True)
         return
@@ -1065,6 +1065,57 @@ async def confirm_deactivate_panel(callback: CallbackQuery):
     if not admin:
         await callback.answer("پنل یافت نشد", show_alert=True)
         return
+    
+    panel_name = admin.admin_name or admin.marzban_username or f"Panel-{admin.id}"
+    
+    # Show detailed confirmation
+    confirmation_text = (
+        "⚠️ **تأیید نهایی حذف پنل**\n\n"
+        f"🏷️ **نام پنل:** {panel_name}\n"
+        f"👤 **کاربر:** {admin.username or admin.user_id}\n"
+        f"🔐 **نام کاربری مرزبان:** {admin.marzban_username}\n"
+        f"📊 **حداکثر کاربران:** {admin.max_users}\n\n"
+        "🚨 **هشدار مهم:**\n"
+        "• این عمل تمام کاربران این پنل را از مرزبان حذف می‌کند\n"
+        "• پنل از دیتابیس ربات حذف می‌شود\n"
+        "• این عمل غیرقابل برگشت است\n\n"
+        "آیا مطمئن هستید که می‌خواهید این پنل و **تمام کاربرانش** را حذف کنید؟"
+    )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🚨 بله، حذف کن", callback_data=f"final_confirm_delete_{admin_id}"),
+        ],
+        [
+            InlineKeyboardButton(text="❌ لغو", callback_data="remove_admin"),
+        ]
+    ])
+    
+    await callback.message.edit_text(confirmation_text, reply_markup=keyboard)
+    await callback.answer()
+
+
+@sudo_router.callback_query(F.data.startswith("final_confirm_delete_"))
+async def final_confirm_delete_panel(callback: CallbackQuery):
+    """Actually delete the panel after final confirmation."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    admin_id = int(callback.data.split("_")[-1])
+    admin = await db.get_admin_by_id(admin_id)
+    
+    if not admin:
+        await callback.answer("پنل یافت نشد", show_alert=True)
+        return
+    
+    panel_name = admin.admin_name or admin.marzban_username or f"Panel-{admin.id}"
+    
+    # Show processing message
+    await callback.message.edit_text(
+        f"⏳ **در حال حذف پنل {panel_name}...**\n\n"
+        "لطفاً منتظر بمانید..."
+    )
     
     # Completely delete the panel and all users for manual deactivation
     success = await delete_admin_panel_completely(admin_id, "غیرفعالسازی دستی توسط سودو")
