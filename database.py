@@ -112,6 +112,26 @@ class Database:
                 )
             """)
 
+            # Create cumulative_traffic table for persistent traffic tracking
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS cumulative_traffic (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    admin_id INTEGER NOT NULL,
+                    total_traffic_consumed INTEGER DEFAULT 0,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (admin_id) REFERENCES admins(id)
+                )
+            """)
+
+            # Create unique index on admin_id for cumulative_traffic
+            await db.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_cumulative_traffic_admin_id 
+                ON cumulative_traffic(admin_id)
+            """)
+
+            # Initialize cumulative traffic tracking for existing admins
+            await self._initialize_cumulative_tracking_for_existing_admins(db)
+
             await db.commit()
 
     async def _migrate_admin_table(self, db):
@@ -157,11 +177,30 @@ class Database:
         await db.execute("DROP TABLE admins")
         await db.execute("ALTER TABLE admins_new RENAME TO admins")
 
+    async def _initialize_cumulative_tracking_for_existing_admins(self, db):
+        """Initialize cumulative traffic tracking for all existing admins in the database."""
+        try:
+            print("Initializing cumulative traffic tracking for existing admins...")
+            async with db.execute("SELECT id FROM admins") as cursor:
+                admin_ids = [row[0] for row in await cursor.fetchall()]
+
+            for admin_id in admin_ids:
+                try:
+                    await db.execute("""
+                        INSERT OR IGNORE INTO cumulative_traffic (admin_id, total_traffic_consumed, last_updated)
+                        VALUES (?, 0, CURRENT_TIMESTAMP)
+                    """, (admin_id,))
+                except Exception as e:
+                    print(f"Error initializing cumulative traffic for admin {admin_id}: {e}")
+            print(f"Cumulative traffic tracking initialized for {len(admin_ids)} existing admins.")
+        except Exception as e:
+            print(f"Error initializing cumulative traffic for existing admins: {e}")
+
     async def add_admin(self, admin: AdminModel) -> bool:
         """Add a new admin to the database."""
         try:
             async with aiosqlite.connect(self.db_path) as db:
-                await db.execute("""
+                cursor = await db.execute("""
                     INSERT INTO admins (user_id, admin_name, marzban_username, marzban_password,
                                       username, first_name, last_name, 
                                       max_users, max_total_time, max_total_traffic, validity_days,
@@ -171,6 +210,14 @@ class Database:
                       admin.username, admin.first_name, admin.last_name,
                       admin.max_users, admin.max_total_time, admin.max_total_traffic, admin.validity_days,
                       admin.is_active, admin.original_password, admin.deactivated_at, admin.deactivated_reason))
+                
+                # Get the new admin ID and initialize cumulative tracking
+                new_admin_id = cursor.lastrowid
+                await db.execute("""
+                    INSERT OR IGNORE INTO cumulative_traffic (admin_id, total_traffic_consumed, last_updated)
+                    VALUES (?, 0, CURRENT_TIMESTAMP)
+                """, (new_admin_id,))
+                
                 await db.commit()
                 return True
         except aiosqlite.IntegrityError as e:
@@ -466,6 +513,72 @@ class Database:
         except Exception as e:
             print(f"Error getting deactivated admins: {e}")
             return []
+
+    async def get_cumulative_traffic(self, admin_id: int) -> int:
+        """Get cumulative traffic consumed for an admin."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(
+                    "SELECT total_traffic_consumed FROM cumulative_traffic WHERE admin_id = ?", 
+                    (admin_id,)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    return row[0] if row else 0
+        except Exception as e:
+            print(f"Error getting cumulative traffic for admin {admin_id}: {e}")
+            return 0
+
+    async def update_cumulative_traffic(self, admin_id: int, current_traffic: int) -> bool:
+        """Update cumulative traffic for an admin (only increases, never decreases)."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                # Get current cumulative traffic
+                current_cumulative = await self.get_cumulative_traffic(admin_id)
+                
+                # Only update if current traffic is higher than stored cumulative
+                if current_traffic > current_cumulative:
+                    await db.execute("""
+                        INSERT OR REPLACE INTO cumulative_traffic (admin_id, total_traffic_consumed, last_updated)
+                        VALUES (?, ?, CURRENT_TIMESTAMP)
+                    """, (admin_id, current_traffic))
+                    await db.commit()
+                    return True
+                return False
+        except Exception as e:
+            print(f"Error updating cumulative traffic for admin {admin_id}: {e}")
+            return False
+
+    async def add_to_cumulative_traffic(self, admin_id: int, traffic_to_add: int) -> bool:
+        """Add traffic to cumulative total (used when users are deleted)."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                # Get current cumulative traffic
+                current_cumulative = await self.get_cumulative_traffic(admin_id)
+                new_total = current_cumulative + traffic_to_add
+                
+                await db.execute("""
+                    INSERT OR REPLACE INTO cumulative_traffic (admin_id, total_traffic_consumed, last_updated)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                """, (admin_id, new_total))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error adding to cumulative traffic for admin {admin_id}: {e}")
+            return False
+
+    async def initialize_cumulative_traffic(self, admin_id: int) -> bool:
+        """Initialize cumulative traffic tracking for an admin if not exists."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    INSERT OR IGNORE INTO cumulative_traffic (admin_id, total_traffic_consumed, last_updated)
+                    VALUES (?, 0, CURRENT_TIMESTAMP)
+                """, (admin_id,))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error initializing cumulative traffic for admin {admin_id}: {e}")
+            return False
 
     async def close(self):
         """Close database connection (placeholder for future connection pooling)."""
