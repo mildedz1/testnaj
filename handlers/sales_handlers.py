@@ -13,7 +13,6 @@ from aiogram.fsm.state import State, StatesGroup
 import config
 from database import db
 from models.schemas import AdminModel, SalesProductModel, PaymentMethodModel, SalesOrderModel
-from utils.formatting import format_traffic_size, format_time_duration
 import logging
 
 logger = logging.getLogger(__name__)

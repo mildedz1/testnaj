@@ -1032,6 +1032,22 @@ class Database:
             print(f"Error getting order by ID: {e}")
             return None
 
+    async def get_admin_by_marzban_username(self, marzban_username: str):
+        """Get admin by marzban username."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute("""
+                    SELECT * FROM admins WHERE marzban_username = ?
+                """, (marzban_username,)) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        return AdminModel(**dict(row))
+                    return None
+        except Exception as e:
+            print(f"Error getting admin by marzban username: {e}")
+            return None
+
     async def close(self):
         """Close database connection (placeholder for future connection pooling)."""
         pass
