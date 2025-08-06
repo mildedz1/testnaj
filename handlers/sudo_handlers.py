@@ -815,9 +815,9 @@ async def confirm_create_admin(callback: CallbackQuery, state: FSMContext):
             validity_days=validity_days
         )
         
-        db_success = await db.add_admin(admin)
+        admin_id = await db.add_admin(admin)
         
-        if not db_success:
+        if admin_id == 0:
             logger.error(f"Failed to add admin to database: {admin_user_id}")
             # Try to remove from Marzban if database failed
             try:

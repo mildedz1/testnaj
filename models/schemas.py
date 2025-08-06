@@ -65,5 +65,8 @@ class LimitCheckResult(BaseModel):
     admin_id: Optional[int] = None  # For tracking individual admin panels
     exceeded: bool = False
     warning: bool = False
+    limits_exceeded: bool = False  # For backward compatibility
+    time_exceeded: bool = False
+    message: Optional[str] = None
     limits_data: Dict[str, Any] = Field(default_factory=dict)
     affected_users: List[str] = Field(default_factory=list)

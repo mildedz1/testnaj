@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from datetime import datetime
 from typing import List, Dict
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -10,6 +11,8 @@ from database import db
 from marzban_api import marzban_api
 from models.schemas import UsageReportModel, LogModel, LimitCheckResult
 from utils.notify import notify_limit_warning, notify_limit_exceeded
+
+logger = logging.getLogger(__name__)
 
 
 class MonitoringScheduler:
@@ -31,6 +34,17 @@ class MonitoringScheduler:
             admin = await db.get_admin_by_id(admin_id)
             if not admin or not admin.is_active:
                 return LimitCheckResult(admin_user_id=admin.user_id if admin else 0)
+            
+            # Check if admin has expired based on creation time and validity_days
+            if await db.is_admin_expired(admin_id):
+                logger.warning(f"Admin {admin_id} ({admin.admin_name}) has expired")
+                return LimitCheckResult(
+                    admin_user_id=admin.user_id,
+                    admin_id=admin_id,
+                    limits_exceeded=True,
+                    time_exceeded=True,
+                    message="ادمین شما منقضی شده است"
+                )
 
             # Initialize cumulative traffic tracking for this admin
             await db.initialize_cumulative_traffic(admin_id)
