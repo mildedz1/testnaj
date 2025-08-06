@@ -47,6 +47,7 @@ class EditAdminLimitsStates(StatesGroup):
     waiting_for_admin_selection = State()
     waiting_for_limit_type = State()
     waiting_for_new_value = State()
+    waiting_for_confirmation = State()
 
 class BroadcastStates(StatesGroup):
     waiting_for_message = State()
