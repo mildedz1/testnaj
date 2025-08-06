@@ -196,8 +196,8 @@ class Database:
         except Exception as e:
             print(f"Error initializing cumulative traffic for existing admins: {e}")
 
-    async def add_admin(self, admin: AdminModel) -> bool:
-        """Add a new admin to the database."""
+    async def add_admin(self, admin: AdminModel) -> int:
+        """Add a new admin to the database. Returns admin_id on success, 0 on failure."""
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 cursor = await db.execute("""
@@ -219,13 +219,18 @@ class Database:
                 """, (new_admin_id,))
                 
                 await db.commit()
-                return True
+                return new_admin_id
         except aiosqlite.IntegrityError as e:
             print(f"Admin already exists (marzban_username must be unique): {e}")
-            return False
+            return 0
         except Exception as e:
             print(f"Error adding admin: {e}")
-            return False
+            return 0
+
+    async def add_admin_legacy(self, admin: AdminModel) -> bool:
+        """Legacy wrapper for add_admin that returns bool for backward compatibility."""
+        result = await self.add_admin(admin)
+        return result > 0
 
     async def get_admin(self, user_id: int) -> Optional[AdminModel]:
         """Get first admin by user_id for backward compatibility."""
@@ -578,6 +583,76 @@ class Database:
                 return True
         except Exception as e:
             print(f"Error initializing cumulative traffic for admin {admin_id}: {e}")
+            return False
+
+    async def is_admin_expired(self, admin_id: int) -> bool:
+        """Check if admin has expired based on created_at and validity_days."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(
+                    "SELECT created_at, validity_days FROM admins WHERE id = ?", 
+                    (admin_id,)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if not row:
+                        return True  # Admin not found, consider expired
+                    
+                    created_at_str, validity_days = row
+                    if not created_at_str or not validity_days:
+                        return False  # No expiration info, don't expire
+                    
+                    # Parse creation time
+                    created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                    
+                    # Calculate expiration time
+                    expiration_time = created_at.timestamp() + (validity_days * 24 * 3600)
+                    current_time = datetime.now().timestamp()
+                    
+                    return current_time > expiration_time
+        except Exception as e:
+            print(f"Error checking admin expiration for admin {admin_id}: {e}")
+            return False  # Don't expire on error
+    
+    async def get_admin_remaining_days(self, admin_id: int) -> int:
+        """Get remaining days for admin before expiration."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(
+                    "SELECT created_at, validity_days FROM admins WHERE id = ?", 
+                    (admin_id,)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if not row:
+                        return 0  # Admin not found
+                    
+                    created_at_str, validity_days = row
+                    if not created_at_str or not validity_days:
+                        return validity_days or 0  # Return original validity if no creation time
+                    
+                    # Parse creation time
+                    created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                    
+                    # Calculate remaining time
+                    expiration_time = created_at.timestamp() + (validity_days * 24 * 3600)
+                    current_time = datetime.now().timestamp()
+                    remaining_seconds = expiration_time - current_time
+                    
+                    # Convert to days (round up)
+                    remaining_days = max(0, int(remaining_seconds / (24 * 3600)) + (1 if remaining_seconds % (24 * 3600) > 0 else 0))
+                    return remaining_days
+        except Exception as e:
+            print(f"Error getting remaining days for admin {admin_id}: {e}")
+            return 0
+
+    async def execute_query(self, query: str, params: tuple):
+        """Execute a custom query with parameters."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(query, params)
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error executing query: {e}")
             return False
 
     async def close(self):

@@ -144,10 +144,14 @@ async def get_my_info_text(user_id: int) -> str:
         traffic_percentage = (admin_stats.total_traffic_used / admin.max_total_traffic) * 100
         time_percentage = (admin_stats.total_time_used / admin.max_total_time) * 100
         
+        # Get remaining days
+        remaining_days = await db.get_admin_remaining_days(admin.id)
+        
         text = f"👤 اطلاعات حساب شما:\n\n"
         text += f"📋 نام کاربری: {admin.username or 'نامشخص'}\n"
         text += f"🆔 User ID: {admin.user_id}\n"
         text += f"📅 تاریخ ایجاد: {admin.created_at}\n"
+        text += f"⏰ روزهای باقی‌مانده: {remaining_days} روز\n"
         text += f"✅ وضعیت: {'فعال' if admin.is_active else 'غیرفعال'}\n\n"
         
         text += f"📊 محدودیت‌ها و استفاده:\n\n"
@@ -169,10 +173,17 @@ async def get_my_info_text(user_id: int) -> str:
             text += f"\n⚠️ توجه: شما به محدودیت‌هایتان نزدیک شده‌اید!"
         
     except Exception as e:
+        # Get remaining days even if stats fail
+        try:
+            remaining_days = await db.get_admin_remaining_days(admin.id)
+        except:
+            remaining_days = admin.validity_days
+            
         text = f"👤 اطلاعات حساب شما:\n\n"
         text += f"📋 نام کاربری: {admin.username or 'نامشخص'}\n"
         text += f"🆔 User ID: {admin.user_id}\n"
         text += f"📅 تاریخ ایجاد: {admin.created_at}\n"
+        text += f"⏰ روزهای باقی‌مانده: {remaining_days} روز\n"
         text += f"✅ وضعیت: {'فعال' if admin.is_active else 'غیرفعال'}\n\n"
         text += f"❌ خطا در دریافت آمار استفاده: {str(e)}"
     
@@ -877,10 +888,14 @@ async def my_info_command(message: Message):
         traffic_percentage = (admin_stats.total_traffic_used / admin.max_total_traffic) * 100
         time_percentage = (admin_stats.total_time_used / admin.max_total_time) * 100
         
+        # Get remaining days
+        remaining_days = await db.get_admin_remaining_days(admin.id)
+        
         text = f"👤 اطلاعات حساب شما:\n\n"
         text += f"📋 نام کاربری: {admin.username or 'نامشخص'}\n"
         text += f"🆔 User ID: {admin.user_id}\n"
         text += f"📅 تاریخ ایجاد: {admin.created_at}\n"
+        text += f"⏰ روزهای باقی‌مانده: {remaining_days} روز\n"
         text += f"✅ وضعیت: {'فعال' if admin.is_active else 'غیرفعال'}\n\n"
         
         text += f"📊 محدودیت‌ها و استفاده:\n\n"
@@ -902,10 +917,17 @@ async def my_info_command(message: Message):
             text += f"\n⚠️ توجه: شما به محدودیت‌هایتان نزدیک شده‌اید!"
         
     except Exception as e:
+        # Get remaining days even if stats fail
+        try:
+            remaining_days = await db.get_admin_remaining_days(admin.id)
+        except:
+            remaining_days = admin.validity_days
+            
         text = f"👤 اطلاعات حساب شما:\n\n"
         text += f"📋 نام کاربری: {admin.username or 'نامشخص'}\n"
         text += f"🆔 User ID: {admin.user_id}\n"
         text += f"📅 تاریخ ایجاد: {admin.created_at}\n"
+        text += f"⏰ روزهای باقی‌مانده: {remaining_days} روز\n"
         text += f"✅ وضعیت: {'فعال' if admin.is_active else 'غیرفعال'}\n\n"
         text += f"❌ خطا در دریافت آمار استفاده: {str(e)}"
     
