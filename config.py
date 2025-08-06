@@ -56,6 +56,7 @@ MESSAGES = {
 # Button Labels
 BUTTONS = {
     "add_admin": "➕ افزودن ادمین",
+    "add_existing_admin": "🔄 افزودن ادمین قبلی",
     "remove_admin": "🗑️ حذف پنل", 
     "edit_panel": "✏️ ویرایش پنل",
     "list_admins": "📋 لیست ادمین‌ها",

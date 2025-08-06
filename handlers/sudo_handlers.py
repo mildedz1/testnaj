@@ -36,6 +36,13 @@ class EditPanelStates(StatesGroup):
     waiting_for_confirmation = State()
 
 
+class AddExistingAdminStates(StatesGroup):
+    waiting_for_user_id = State()
+    waiting_for_marzban_username = State()
+    waiting_for_marzban_password = State()
+    waiting_for_confirmation = State()
+
+
 sudo_router = Router()
 
 
@@ -62,15 +69,18 @@ def get_sudo_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         [
             InlineKeyboardButton(text=config.BUTTONS["add_admin"], callback_data="add_admin"),
-            InlineKeyboardButton(text=config.BUTTONS["remove_admin"], callback_data="remove_admin")
+            InlineKeyboardButton(text=config.BUTTONS["add_existing_admin"], callback_data="add_existing_admin")
         ],
         [
-            InlineKeyboardButton(text=config.BUTTONS["edit_panel"], callback_data="edit_panel"),
+            InlineKeyboardButton(text=config.BUTTONS["remove_admin"], callback_data="remove_admin"),
             InlineKeyboardButton(text=config.BUTTONS["activate_admin"], callback_data="activate_admin")
         ],
         [
-            InlineKeyboardButton(text=config.BUTTONS["list_admins"], callback_data="list_admins"),
+            InlineKeyboardButton(text=config.BUTTONS["edit_panel"], callback_data="edit_panel"),
             InlineKeyboardButton(text=config.BUTTONS["admin_status"], callback_data="admin_status")
+        ],
+        [
+            InlineKeyboardButton(text=config.BUTTONS["list_admins"], callback_data="list_admins")
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -187,6 +197,43 @@ async def add_admin_callback(callback: CallbackQuery, state: FSMContext):
     # Set initial state for the add admin process
     logger.info(f"User {callback.from_user.id} transitioning to state: AddAdminStates.waiting_for_user_id")
     await state.set_state(AddAdminStates.waiting_for_user_id)
+    
+    # Log state change
+    current_state = await state.get_state()
+    logger.info(f"User {callback.from_user.id} state set to: {current_state}")
+    
+    await callback.answer()
+
+
+@sudo_router.callback_query(F.data == "add_existing_admin")
+async def add_existing_admin_callback(callback: CallbackQuery, state: FSMContext):
+    """Start adding existing admin process."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    # Clear any existing state first
+    current_state = await state.get_state()
+    logger.info(f"User {callback.from_user.id} clearing previous state before add_existing_admin: {current_state}")
+    await state.clear()
+    
+    logger.info(f"Starting add existing admin process for sudo user {callback.from_user.id}")
+    
+    await callback.message.edit_text(
+        "🔄 **افزودن ادمین قبلی**\n\n"
+        "این بخش برای اضافه کردن ادمین‌هایی است که روی سرور مرزبان موجود هستند اما در دیتابیس ربات ثبت نشده‌اند.\n\n"
+        "📝 **مرحله ۱ از ۴: User ID**\n\n"
+        "لطفاً User ID (آیدی تلگرام) ادمین را ارسال کنید:\n\n"
+        "🔍 **نکته:** User ID باید یک عدد صحیح باشد\n"
+        "📋 **مثال:** `123456789`",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=config.BUTTONS["cancel"], callback_data="back_to_main")]
+        ])
+    )
+    
+    # Set initial state for the add existing admin process
+    logger.info(f"User {callback.from_user.id} transitioning to state: AddExistingAdminStates.waiting_for_user_id")
+    await state.set_state(AddExistingAdminStates.waiting_for_user_id)
     
     # Log state change
     current_state = await state.get_state()
@@ -2105,3 +2152,446 @@ async def notify_admin_reactivation(bot, admin_user_id: int, reactivated_by: int
             
     except Exception as e:
         logger.error(f"Error notifying admin about reactivation: {e}")
+
+
+# ===== ADD EXISTING ADMIN HANDLERS =====
+
+@sudo_router.message(AddExistingAdminStates.waiting_for_user_id, F.text)
+async def process_existing_admin_user_id(message: Message, state: FSMContext):
+    """Process existing admin user ID input."""
+    user_id = message.from_user.id
+    current_state = await state.get_state()
+    logger.info(f"FSM handler 'process_existing_admin_user_id' activated for user {user_id}, current state: {current_state}, message: {message.text}")
+    
+    # Verify user is sudo admin
+    if user_id not in config.SUDO_ADMINS:
+        logger.warning(f"Non-sudo user {user_id} attempted existing admin addition")
+        await message.answer("⛔ شما مجاز به انجام این عمل نیستید.")
+        await state.clear()
+        return
+    
+    try:
+        admin_user_id = int(message.text.strip())
+        logger.info(f"User {user_id} entered existing admin user ID: {admin_user_id}")
+        
+        # Check if admin already exists in database
+        existing_admin = await db.get_admin(admin_user_id)
+        if existing_admin:
+            logger.warning(f"Admin {admin_user_id} already exists in database")
+            await message.answer(
+                "❌ **خطا: ادمین در دیتابیس موجود است**\n\n"
+                "این کاربر قبلاً در دیتابیس ربات ثبت شده است.\n\n"
+                "💡 لطفاً User ID متفاوتی وارد کنید یا از گزینه 'افزودن ادمین' جدید استفاده کنید:"
+            )
+            return
+        
+        # Save the user ID to state data
+        await state.update_data(user_id=admin_user_id)
+        
+        # Move to next step
+        await message.answer(
+            f"✅ **User ID دریافت شد:** `{admin_user_id}`\n\n"
+            "📝 **مرحله ۲ از ۴: نام کاربری مرزبان**\n\n"
+            "لطفاً نام کاربری (Username) ادمین در سرور مرزبان را وارد کنید:\n\n"
+            "📋 **نکته:** این نام کاربری باید دقیقاً مطابق با نام کاربری ادمین در پنل مرزبان باشد\n"
+            "🔍 **مثال:** `admin123` یا `manager_north`"
+        )
+        
+        # Change state to waiting for marzban username
+        await state.set_state(AddExistingAdminStates.waiting_for_marzban_username)
+        
+    except ValueError:
+        logger.warning(f"Invalid user ID format from user {user_id}: {message.text}")
+        await message.answer(
+            "❌ **فرمت اشتباه**\n\n"
+            "User ID باید یک عدد صحیح باشد.\n\n"
+            "📋 **مثال صحیح:** `123456789`\n\n"
+            "لطفاً مجدداً تلاش کنید:"
+        )
+
+
+@sudo_router.message(AddExistingAdminStates.waiting_for_marzban_username, F.text)
+async def process_existing_admin_username(message: Message, state: FSMContext):
+    """Process existing admin marzban username input."""
+    user_id = message.from_user.id
+    current_state = await state.get_state()
+    logger.info(f"FSM handler 'process_existing_admin_username' activated for user {user_id}, current state: {current_state}, message: {message.text}")
+    
+    # Verify user is sudo admin
+    if user_id not in config.SUDO_ADMINS:
+        logger.warning(f"Non-sudo user {user_id} attempted existing admin addition")
+        await message.answer("⛔ شما مجاز به انجام این عمل نیستید.")
+        await state.clear()
+        return
+    
+    marzban_username = message.text.strip()
+    
+    # Basic validation
+    if not marzban_username or len(marzban_username) < 2:
+        await message.answer(
+            "❌ **نام کاربری نامعتبر**\n\n"
+            "نام کاربری باید حداقل ۲ کاراکتر باشد.\n\n"
+            "لطفاً مجدداً تلاش کنید:"
+        )
+        return
+    
+    # Check if username already exists in database  
+    existing_admin = await db.get_admin_by_marzban_username(marzban_username)
+    if existing_admin:
+        logger.warning(f"Marzban username {marzban_username} already exists in database")
+        await message.answer(
+            "❌ **خطا: نام کاربری تکراری**\n\n"
+            "این نام کاربری قبلاً در دیتابیس ربات ثبت شده است.\n\n"
+            "💡 لطفاً نام کاربری متفاوتی وارد کنید:"
+        )
+        return
+    
+    # Save the username to state data
+    await state.update_data(marzban_username=marzban_username)
+    
+    # Move to next step
+    await message.answer(
+        f"✅ **نام کاربری دریافت شد:** `{marzban_username}`\n\n"
+        "📝 **مرحله ۳ از ۴: رمز عبور مرزبان**\n\n"
+        "لطفاً رمز عبور ادمین در سرور مرزبان را وارد کنید:\n\n"
+        "🔒 **نکته امنیتی:** این پیام پس از دریافت حذف خواهد شد\n"
+        "⚠️ **هشدار:** رمز عبور باید دقیقاً مطابق با رمز عبور ادمین در پنل مرزبان باشد"
+    )
+    
+    # Change state to waiting for marzban password
+    await state.set_state(AddExistingAdminStates.waiting_for_marzban_password)
+
+
+@sudo_router.message(AddExistingAdminStates.waiting_for_marzban_password, F.text)
+async def process_existing_admin_password(message: Message, state: FSMContext):
+    """Process existing admin marzban password input."""
+    user_id = message.from_user.id
+    current_state = await state.get_state()
+    logger.info(f"FSM handler 'process_existing_admin_password' activated for user {user_id}, current state: {current_state}")
+    
+    # Verify user is sudo admin
+    if user_id not in config.SUDO_ADMINS:
+        logger.warning(f"Non-sudo user {user_id} attempted existing admin addition")
+        await message.answer("⛔ شما مجاز به انجام این عمل نیستید.")
+        await state.clear()
+        return
+    
+    # Delete the message containing password immediately for security
+    try:
+        await message.delete()
+    except Exception as e:
+        logger.warning(f"Could not delete password message: {e}")
+    
+    marzban_password = message.text.strip()
+    
+    # Basic validation
+    if not marzban_password or len(marzban_password) < 3:
+        await message.answer(
+            "❌ **رمز عبور نامعتبر**\n\n"
+            "رمز عبور باید حداقل ۳ کاراکتر باشد.\n\n"
+            "لطفاً مجدداً رمز عبور را ارسال کنید:"
+        )
+        return
+    
+    # Get data from state
+    data = await state.get_data()
+    admin_user_id = data.get('user_id')
+    marzban_username = data.get('marzban_username')
+    
+    if not admin_user_id or not marzban_username:
+        logger.error(f"Missing data in state for user {user_id}: user_id={admin_user_id}, username={marzban_username}")
+        await message.answer(
+            "❌ **خطای داخلی**\n\n"
+            "اطلاعات جلسه از دست رفته است. لطفاً مجدداً از ابتدا شروع کنید."
+        )
+        await state.clear()
+        return
+    
+    # Save password to state and validate credentials
+    await state.update_data(marzban_password=marzban_password)
+    
+    # Send validation message
+    status_message = await message.answer(
+        "🔄 **در حال اعتبارسنجی...**\n\n"
+        "لطفاً منتظر بمانید تا اطلاعات با سرور مرزبان بررسی شود..."
+    )
+    
+    # Validate credentials and extract admin info
+    try:
+        validation_result = await validate_existing_admin_credentials(marzban_username, marzban_password)
+        
+        if not validation_result['success']:
+            await status_message.edit_text(
+                f"❌ **خطا در اعتبارسنجی**\n\n"
+                f"مشکل: {validation_result['error']}\n\n"
+                "لطفاً اطلاعات را بررسی کنید و مجدداً تلاش کنید.\n"
+                "برای شروع مجدد از منوی اصلی استفاده کنید."
+            )
+            await state.clear()
+            return
+        
+        # Extract admin stats and info
+        admin_stats = validation_result['admin_stats']
+        
+        # Save extracted info to state
+        await state.update_data(
+            admin_stats=admin_stats,
+            extracted_info=validation_result.get('extracted_info', {})
+        )
+        
+        # Show confirmation
+        await status_message.edit_text(
+            "✅ **اعتبارسنجی موفق**\n\n"
+            f"📊 **اطلاعات استخراج شده:**\n"
+            f"👤 نام کاربری: `{marzban_username}`\n"
+            f"👥 تعداد کاربران: {admin_stats.total_users}\n"
+            f"📈 کاربران فعال: {admin_stats.active_users}\n"
+            f"📊 مصرف ترافیک: {format_traffic_size(admin_stats.total_traffic_used)}\n"
+            f"⏱️ زمان استفاده: {format_time_duration(admin_stats.total_time_used)}\n\n"
+            "📝 **مرحله ۴ از ۴: تأیید نهایی**\n\n"
+            "آیا می‌خواهید این ادمین را با اطلاعات بالا به دیتابیس ربات اضافه کنید؟",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="✅ تأیید و اضافه کردن", callback_data="confirm_add_existing_admin"),
+                    InlineKeyboardButton(text="❌ لغو", callback_data="back_to_main")
+                ]
+            ])
+        )
+        
+        # Change state to waiting for confirmation
+        await state.set_state(AddExistingAdminStates.waiting_for_confirmation)
+        
+    except Exception as e:
+        logger.error(f"Error validating existing admin credentials: {e}")
+        await status_message.edit_text(
+            "❌ **خطای سرور**\n\n"
+            "مشکلی در اتصال به سرور مرزبان یا استخراج اطلاعات پیش آمد.\n\n"
+            "لطفاً اتصال اینترنت و تنظیمات سرور را بررسی کنید."
+        )
+        await state.clear()
+
+
+@sudo_router.callback_query(F.data == "confirm_add_existing_admin")
+async def confirm_add_existing_admin(callback: CallbackQuery, state: FSMContext):
+    """Confirm and add existing admin to database."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    # Get data from state
+    data = await state.get_data()
+    admin_user_id = data.get('user_id')
+    marzban_username = data.get('marzban_username')
+    marzban_password = data.get('marzban_password')
+    admin_stats = data.get('admin_stats')
+    extracted_info = data.get('extracted_info', {})
+    
+    if not all([admin_user_id, marzban_username, marzban_password, admin_stats]):
+        logger.error(f"Missing required data in state for confirmation")
+        await callback.message.edit_text(
+            "❌ **خطای داخلی**\n\n"
+            "اطلاعات لازم در جلسه موجود نیست. لطفاً مجدداً شروع کنید."
+        )
+        await state.clear()
+        return
+    
+    # Send processing message
+    await callback.message.edit_text(
+        "⏳ **در حال اضافه کردن ادمین...**\n\n"
+        "لطفاً منتظر بمانید..."
+    )
+    
+    try:
+        # Add admin to database
+        success = await add_existing_admin_to_database(
+            user_id=admin_user_id,
+            marzban_username=marzban_username,
+            marzban_password=marzban_password,
+            admin_stats=admin_stats,
+            extracted_info=extracted_info
+        )
+        
+        if success:
+            # Clear state
+            await state.clear()
+            
+            # Send success message
+            await callback.message.edit_text(
+                "✅ **ادمین قبلی با موفقیت اضافه شد**\n\n"
+                f"👤 User ID: `{admin_user_id}`\n"
+                f"🔐 نام کاربری: `{marzban_username}`\n"
+                f"👥 تعداد کاربران: {admin_stats.total_users}\n"
+                f"📊 ترافیک مصرفی: {format_traffic_size(admin_stats.total_traffic_used)}\n\n"
+                "🎉 ادمین اکنون می‌تواند از ربات استفاده کند.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+                ])
+            )
+            
+            # Notify the new admin
+            try:
+                # Get bot instance from callback
+                bot = callback.bot
+                await bot.send_message(
+                    admin_user_id,
+                    "🎉 **خوش آمدید!**\n\n"
+                    "حساب شما به ربات مدیریت مرزبان اضافه شد.\n"
+                    "اکنون می‌توانید از امکانات ربات استفاده کنید.\n\n"
+                    "برای شروع /start را بزنید."
+                )
+            except Exception as e:
+                logger.warning(f"Could not notify new admin {admin_user_id}: {e}")
+        else:
+            await callback.message.edit_text(
+                "❌ **خطا در اضافه کردن ادمین**\n\n"
+                "مشکلی در ذخیره اطلاعات پیش آمد. لطفاً مجدداً تلاش کنید.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+                ])
+            )
+    
+    except Exception as e:
+        logger.error(f"Error adding existing admin: {e}")
+        await callback.message.edit_text(
+            "❌ **خطای سیستم**\n\n"
+            "مشکلی در سیستم پیش آمد. لطفاً مجدداً تلاش کنید.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+            ])
+        )
+    
+    await callback.answer()
+
+
+# ===== HELPER FUNCTIONS FOR EXISTING ADMIN =====
+
+async def validate_existing_admin_credentials(marzban_username: str, marzban_password: str) -> dict:
+    """
+    Validate existing admin credentials and extract information from Marzban server.
+    
+    Returns:
+        dict: {
+            'success': bool,
+            'error': str (if success=False),
+            'admin_stats': AdminStatsModel (if success=True),
+            'extracted_info': dict (if success=True)
+        }
+    """
+    try:
+        logger.info(f"Validating credentials for existing admin: {marzban_username}")
+        
+        # Create admin API instance with provided credentials
+        admin_api = await marzban_api.create_admin_api(marzban_username, marzban_password)
+        
+        # Test authentication by getting token
+        token = await admin_api.get_token()
+        if not token:
+            return {
+                'success': False,
+                'error': 'نام کاربری یا رمز عبور اشتباه است'
+            }
+        
+        # Get admin statistics
+        admin_stats = await admin_api.get_admin_stats()
+        if not admin_stats:
+            return {
+                'success': False,
+                'error': 'خطا در دریافت آمار ادمین از سرور'
+            }
+        
+        # Extract additional information if possible
+        extracted_info = {
+            'last_validated': datetime.now().timestamp(),
+            'token_validated': True,
+            'server_url': marzban_api.base_url
+        }
+        
+        logger.info(f"Successfully validated admin {marzban_username}: {admin_stats.total_users} users, {admin_stats.total_traffic_used} traffic")
+        
+        return {
+            'success': True,
+            'admin_stats': admin_stats,
+            'extracted_info': extracted_info
+        }
+        
+    except Exception as e:
+        logger.error(f"Error validating admin credentials for {marzban_username}: {e}")
+        return {
+            'success': False,
+            'error': f'خطا در اتصال به سرور: {str(e)}'
+        }
+
+
+async def add_existing_admin_to_database(
+    user_id: int,
+    marzban_username: str, 
+    marzban_password: str,
+    admin_stats,
+    extracted_info: dict
+) -> bool:
+    """
+    Add existing admin to the robot's database with extracted information.
+    
+    Args:
+        user_id: Telegram user ID
+        marzban_username: Marzban username  
+        marzban_password: Marzban password
+        admin_stats: AdminStatsModel with current stats
+        extracted_info: Additional extracted information
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        logger.info(f"Adding existing admin to database: user_id={user_id}, username={marzban_username}")
+        
+        # Create admin model with current stats as limits
+        # We'll use current traffic usage + some buffer as the limit
+        traffic_buffer = 50 * 1024 * 1024 * 1024  # 50GB buffer
+        max_traffic = max(admin_stats.total_traffic_used + traffic_buffer, 100 * 1024 * 1024 * 1024)  # At least 100GB
+        
+        # For time limit, we'll use a generous default since we can't determine original limits
+        time_buffer = 90 * 24 * 3600  # 90 days
+        max_time = max(admin_stats.total_time_used + time_buffer, 365 * 24 * 3600)  # At least 1 year
+        
+        # Create admin record
+        from models.schemas import AdminModel
+        admin_data = AdminModel(
+            user_id=user_id,
+            username=marzban_username,  # Use marzban username as display name initially
+            admin_name=f"Existing Admin ({marzban_username})",
+            marzban_username=marzban_username,
+            marzban_password=marzban_password,
+            max_total_traffic=max_traffic,
+            max_total_time=max_time,
+            max_users=max(admin_stats.total_users + 50, 100),  # Current users + buffer, at least 100
+            is_active=True,
+            created_at=datetime.now().timestamp(),
+            updated_at=datetime.now().timestamp()
+        )
+        
+        # Add to database
+        admin_id = await db.add_admin(admin_data)
+        if not admin_id:
+            logger.error(f"Failed to add admin {user_id} to database")
+            return False
+        
+        # Initialize cumulative traffic tracking
+        await db.initialize_cumulative_traffic(admin_id)
+        await db.update_cumulative_traffic(admin_id, admin_stats.total_traffic_used)
+        
+        # Log the successful addition
+        log_entry = LogModel(
+            admin_id=admin_id,
+            action="existing_admin_added",
+            details=f"Added existing admin {marzban_username} with {admin_stats.total_users} users and {format_traffic_size(admin_stats.total_traffic_used)} traffic usage",
+            timestamp=datetime.now().timestamp()
+        )
+        await db.add_log(log_entry)
+        
+        logger.info(f"Successfully added existing admin {user_id} to database with ID {admin_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error adding existing admin to database: {e}")
+        return False
