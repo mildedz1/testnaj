@@ -36,6 +36,53 @@ class PurchaseStates(StatesGroup):
 
 sales_router = Router()
 
+# ============= NAVIGATION HANDLERS =============
+
+@sales_router.callback_query(F.data == "start")
+async def handle_start_callback(callback: CallbackQuery, state: FSMContext):
+    """Handle start button from sales system."""
+    await state.clear()  # Clear any FSM state
+    
+    user_id = callback.from_user.id
+    
+    if user_id in config.SUDO_ADMINS:
+        from handlers.sudo_handlers import start_sudo_handler
+        # Convert to message-like object for sudo handler
+        message = callback.message
+        message.from_user = callback.from_user
+        await start_sudo_handler(message)
+    else:
+        # Check if user is admin
+        admin = await db.get_admin(user_id)
+        if admin and admin.is_active:
+            from handlers.admin_handlers import start_admin_handler
+            # Convert to message-like object for admin handler
+            message = callback.message
+            message.from_user = callback.from_user
+            await start_admin_handler(message)
+        else:
+            # Non-admin user
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🛒 خرید پنل", callback_data="buy_panel")]
+            ])
+            
+            await callback.message.edit_text(
+                f"👋 سلام {callback.from_user.first_name}!\n\n"
+                f"🤖 به ربات مدیریت پنل خوش آمدید.\n\n"
+                f"🛒 **برای خرید پنل جدید:**\n"
+                f"بر روی دکمه زیر کلیک کنید تا محصولات موجود را مشاهده کنید.",
+                reply_markup=keyboard
+            )
+    
+    await callback.answer()
+
+@sales_router.callback_query(F.data == "back_to_main")
+async def handle_back_to_main(callback: CallbackQuery, state: FSMContext):
+    """Handle back to main menu."""
+    await handle_start_callback(callback, state)
+
 # ============= ADMIN SALES MANAGEMENT =============
 
 @sales_router.callback_query(F.data == "sales_management")

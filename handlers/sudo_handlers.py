@@ -47,6 +47,9 @@ class EditAdminLimitsStates(StatesGroup):
     waiting_for_admin_selection = State()
     waiting_for_limit_type = State()
     waiting_for_new_value = State()
+
+class BroadcastStates(StatesGroup):
+    waiting_for_message = State()
     waiting_for_confirmation = State()
 
 class RewardUsersStates(StatesGroup):
@@ -98,6 +101,9 @@ def get_sudo_keyboard() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="🛒 مدیریت فروش", callback_data="sales_management"),
             InlineKeyboardButton(text=config.BUTTONS["list_admins"], callback_data="list_admins")
+        ],
+        [
+            InlineKeyboardButton(text="📢 پیام همگانی", callback_data="broadcast_message")
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -3305,6 +3311,202 @@ async def confirm_reset_limits(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+# ============= BROADCAST MESSAGE SYSTEM =============
 
+@sudo_router.callback_query(F.data == "broadcast_message")
+async def broadcast_message_start(callback: CallbackQuery, state: FSMContext):
+    """Start broadcast message process."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    await callback.message.edit_text(
+        "📢 **پیام همگانی**\n\n"
+        "پیام خود را برای ارسال به همه کاربران ربات وارد کنید:\n\n"
+        "💡 **نکات:**\n"
+        "• پیام برای همه ادمین‌ها و کاربران ارسال می‌شود\n"
+        "• می‌توانید از فرمت مارک‌داون استفاده کنید\n"
+        "• برای لغو، دکمه بازگشت را بزنید",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+        ])
+    )
+    
+    await state.set_state(BroadcastStates.waiting_for_message)
+    await callback.answer()
 
+@sudo_router.message(BroadcastStates.waiting_for_message, F.text)
+async def broadcast_message_received(message: Message, state: FSMContext):
+    """Handle broadcast message input."""
+    if message.from_user.id not in config.SUDO_ADMINS:
+        return
+    
+    broadcast_text = message.text.strip()
+    
+    if len(broadcast_text) < 5:
+        await message.answer("❌ پیام باید حداقل ۵ کاراکتر باشد.")
+        return
+    
+    if len(broadcast_text) > 4000:
+        await message.answer("❌ پیام نباید بیشتر از ۴۰۰۰ کاراکتر باشد.")
+        return
+    
+    # Store message in state
+    await state.update_data(broadcast_message=broadcast_text)
+    
+    # Show preview and confirmation
+    preview_text = f"📢 **پیش‌نمایش پیام همگانی:**\n\n{broadcast_text}\n\n"
+    preview_text += "⚠️ **توجه:** این پیام برای همه کاربران ربات ارسال خواهد شد."
+    
+    # Get user counts for confirmation
+    try:
+        # Get all unique user IDs from admins table
+        all_admins = await db.get_all_admins()
+        admin_count = len(all_admins)
+        
+        # Get unique user IDs
+        unique_user_ids = set()
+        for admin in all_admins:
+            unique_user_ids.add(admin.user_id)
+        
+        total_users = len(unique_user_ids)
+        
+        preview_text += f"\n\n📊 **آمار ارسال:**\n"
+        preview_text += f"👥 کل کاربران: {total_users}\n"
+        preview_text += f"🎛️ کل ادمین‌ها: {admin_count}"
+        
+    except Exception as e:
+        logger.error(f"Error getting user counts: {e}")
+        preview_text += f"\n\n⚠️ خطا در دریافت آمار کاربران"
+    
+    await message.answer(
+        preview_text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ تأیید و ارسال", callback_data="confirm_broadcast"),
+                InlineKeyboardButton(text="❌ لغو", callback_data="cancel_broadcast")
+            ],
+            [InlineKeyboardButton(text="✏️ ویرایش پیام", callback_data="edit_broadcast")]
+        ])
+    )
+    
+    await state.set_state(BroadcastStates.waiting_for_confirmation)
+
+@sudo_router.callback_query(F.data == "confirm_broadcast", BroadcastStates.waiting_for_confirmation)
+async def confirm_broadcast(callback: CallbackQuery, state: FSMContext):
+    """Confirm and send broadcast message."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    data = await state.get_data()
+    broadcast_message = data.get('broadcast_message')
+    
+    if not broadcast_message:
+        await callback.answer("خطا: پیام یافت نشد.", show_alert=True)
+        return
+    
+    await callback.message.edit_text(
+        "📤 **در حال ارسال پیام همگانی...**\n\n"
+        "لطفاً منتظر باشید..."
+    )
+    
+    # Get all unique user IDs
+    try:
+        all_admins = await db.get_all_admins()
+        unique_user_ids = set()
+        
+        for admin in all_admins:
+            unique_user_ids.add(admin.user_id)
+        
+        # Add sudo admins to ensure they get the message
+        for sudo_id in config.SUDO_ADMINS:
+            unique_user_ids.add(sudo_id)
+        
+        success_count = 0
+        failed_count = 0
+        blocked_count = 0
+        
+        # Send message to all users
+        for user_id in unique_user_ids:
+            try:
+                await callback.message.bot.send_message(
+                    chat_id=user_id,
+                    text=f"📢 **پیام از مدیریت:**\n\n{broadcast_message}",
+                    parse_mode="Markdown"
+                )
+                success_count += 1
+                
+                # Small delay to avoid rate limiting
+                await asyncio.sleep(0.05)
+                
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "blocked" in error_msg or "deactivated" in error_msg:
+                    blocked_count += 1
+                else:
+                    failed_count += 1
+                
+                logger.warning(f"Failed to send broadcast to {user_id}: {e}")
+        
+        # Send completion report
+        report_text = f"✅ **ارسال پیام همگانی تکمیل شد**\n\n"
+        report_text += f"📊 **گزارش ارسال:**\n"
+        report_text += f"✅ موفق: {success_count}\n"
+        report_text += f"🚫 مسدود شده: {blocked_count}\n"
+        report_text += f"❌ خطا: {failed_count}\n"
+        report_text += f"📊 کل: {len(unique_user_ids)}\n\n"
+        report_text += f"📝 **پیام ارسالی:**\n{broadcast_message[:100]}{'...' if len(broadcast_message) > 100 else ''}"
+        
+        await callback.message.edit_text(
+            report_text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 بازگشت به منو", callback_data="back_to_main")]
+            ])
+        )
+        
+        logger.info(f"Broadcast completed by admin {callback.from_user.id}: {success_count} success, {failed_count} failed, {blocked_count} blocked")
+        
+    except Exception as e:
+        logger.error(f"Error during broadcast: {e}")
+        await callback.message.edit_text(
+            f"❌ **خطا در ارسال پیام همگانی**\n\n"
+            f"خطا: {str(e)}\n\n"
+            f"لطفاً دوباره تلاش کنید.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 تلاش مجدد", callback_data="broadcast_message")],
+                [InlineKeyboardButton(text="🏠 بازگشت به منو", callback_data="back_to_main")]
+            ])
+        )
+    
+    await state.clear()
+    await callback.answer()
+
+@sudo_router.callback_query(F.data == "cancel_broadcast", BroadcastStates.waiting_for_confirmation)
+async def cancel_broadcast(callback: CallbackQuery, state: FSMContext):
+    """Cancel broadcast message."""
+    await callback.message.edit_text(
+        "❌ **ارسال پیام همگانی لغو شد**\n\n"
+        "پیام ارسال نشد.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 بازگشت به منو", callback_data="back_to_main")]
+        ])
+    )
+    
+    await state.clear()
+    await callback.answer()
+
+@sudo_router.callback_query(F.data == "edit_broadcast", BroadcastStates.waiting_for_confirmation)
+async def edit_broadcast(callback: CallbackQuery, state: FSMContext):
+    """Edit broadcast message."""
+    await callback.message.edit_text(
+        "✏️ **ویرایش پیام همگانی**\n\n"
+        "پیام جدید خود را وارد کنید:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+        ])
+    )
+    
+    await state.set_state(BroadcastStates.waiting_for_message)
+    await callback.answer()
 
