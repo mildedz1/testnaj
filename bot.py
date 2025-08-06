@@ -13,6 +13,7 @@ from database import db
 from marzban_api import marzban_api
 from handlers.sudo_handlers import sudo_router
 from handlers.admin_handlers import admin_router
+from handlers.reward_handlers import reward_router
 from scheduler import init_scheduler
 
 
@@ -69,6 +70,10 @@ class MarzbanAdminBot:
         logger.info("Registering admin_router (FSM-aware)...")
         self.dp.include_router(admin_router)
         logger.info("✅ admin_router registered successfully")
+        
+        logger.info("Registering reward_router (FSM-aware)...")
+        self.dp.include_router(reward_router)
+        logger.info("✅ reward_router registered successfully")
         
         logger.info("=== GENERAL HANDLERS (AFTER FSM ROUTERS) ===")
         # Add global handlers AFTER state-specific routers

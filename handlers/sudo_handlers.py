@@ -2791,7 +2791,7 @@ async def edit_admin_limits_select(callback: CallbackQuery, state: FSMContext):
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="⏱️ زمان مصرفی", callback_data="limit_type_consumed_time")
+            InlineKeyboardButton(text="⏱️ زمان مصرف شده", callback_data="limit_type_consumed_time")
         ],
         [
             InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="edit_admin_limits")
@@ -2826,13 +2826,13 @@ async def edit_consumed_time_start(callback: CallbackQuery, state: FSMContext):
         current_consumed_text = await format_time_duration(current_consumed_seconds)
         
         text = (
-            f"⏱️ **ویرایش زمان مصرفی**\n\n"
+            f"⏱️ **ویرایش زمان مصرف شده**\n\n"
             f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n\n"
             f"📊 **وضعیت فعلی:**\n"
-            f"⏱️ زمان مصرفی: {current_consumed_text}\n"
+            f"⏱️ زمان مصرف شده: {current_consumed_text}\n"
             f"🔢 معادل ثانیه: {current_consumed_seconds:,}\n\n"
             f"💡 **نکته:** این عدد گاهی به دلیل باگ یا مشکلات محاسباتی عجیب می‌شود\n\n"
-            f"زمان مصرفی جدید را به **ثانیه** وارد کنید:\n"
+            f"زمان مصرف شده جدید را به **ثانیه** وارد کنید:\n"
             f"(برای تنظیم مجدد روی 0، عدد 0 وارد کنید)"
         )
         
@@ -2882,9 +2882,9 @@ async def reset_consumed_time_zero(callback: CallbackQuery, state: FSMContext):
         
         if success:
             await callback.message.edit_text(
-                f"✅ **زمان مصرفی تنظیم مجدد شد**\n\n"
+                f"✅ **زمان مصرف شده تنظیم مجدد شد**\n\n"
                 f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n"
-                f"⏱️ زمان مصرفی جدید: 0 ثانیه\n\n"
+                f"⏱️ زمان مصرف شده جدید: 0 ثانیه\n\n"
                 f"💡 **نکته:** این تنظیم در دیتابیس ربات ثبت شد.\n"
                 f"برای اعمال کامل، ممکن است نیاز باشد سرور را restart کنید.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -2892,8 +2892,8 @@ async def reset_consumed_time_zero(callback: CallbackQuery, state: FSMContext):
                 ])
             )
         else:
-            await callback.message.edit_text(
-                "❌ خطا در تنظیم مجدد زمان مصرفی",
+                            await callback.message.edit_text(
+                "❌ خطا در تنظیم مجدد زمان مصرف شده",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="edit_admin_limits")]
                 ])
