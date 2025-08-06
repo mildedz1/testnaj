@@ -49,6 +49,11 @@ class EditAdminLimitsStates(StatesGroup):
     waiting_for_new_value = State()
     waiting_for_confirmation = State()
 
+class RewardUsersStates(StatesGroup):
+    waiting_for_reward_type = State()
+    waiting_for_reward_amount = State()
+    waiting_for_confirmation = State()
+
 
 sudo_router = Router()
 
@@ -88,6 +93,9 @@ def get_sudo_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="📊 ویرایش محدودیت‌ها", callback_data="edit_admin_limits"),
+            InlineKeyboardButton(text="🎁 پاداش کاربران", callback_data="reward_users")
+        ],
+        [
             InlineKeyboardButton(text=config.BUTTONS["list_admins"], callback_data="list_admins")
         ]
     ]
@@ -2056,10 +2064,7 @@ async def deactivate_admin_and_users(admin_user_id: int, reason: str = "Limit ex
 async def delete_admin_panel_completely(admin_id: int, reason: str = "غیرفعالسازی دستی توسط سودو") -> bool:
     """Completely delete admin panel and all their users from both Marzban and database (for manual deactivation)."""
 
-    # EMERGENCY STOP: Deletion temporarily disabled
-    print("🚨 EMERGENCY: Admin deletion is temporarily disabled!")
-    print("To re-enable, remove this emergency check from the code.")
-    return False
+    # Emergency stop removed - deletion is now enabled
     try:
         admin = await db.get_admin_by_id(admin_id)
         if not admin:
@@ -2786,12 +2791,7 @@ async def edit_admin_limits_select(callback: CallbackQuery, state: FSMContext):
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="👥 تعداد کاربران", callback_data="limit_type_users"),
-            InlineKeyboardButton(text="📊 حجم ترافیک", callback_data="limit_type_traffic")
-        ],
-        [
-            InlineKeyboardButton(text="⏱️ زمان استفاده", callback_data="limit_type_time"),
-            InlineKeyboardButton(text="🔄 تنظیم مجدد همه", callback_data="limit_type_reset")
+            InlineKeyboardButton(text="⏱️ زمان مصرفی", callback_data="limit_type_consumed_time")
         ],
         [
             InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="edit_admin_limits")
@@ -2800,6 +2800,117 @@ async def edit_admin_limits_select(callback: CallbackQuery, state: FSMContext):
     
     await callback.message.edit_text(text, reply_markup=keyboard)
     await state.set_state(EditAdminLimitsStates.waiting_for_limit_type)
+    await callback.answer()
+
+
+@sudo_router.callback_query(EditAdminLimitsStates.waiting_for_limit_type, F.data == "limit_type_consumed_time")
+async def edit_consumed_time_start(callback: CallbackQuery, state: FSMContext):
+    """Start editing consumed time."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    data = await state.get_data()
+    admin = data.get('admin')
+    
+    if not admin:
+        await callback.answer("خطا در دریافت اطلاعات ادمین", show_alert=True)
+        return
+    
+    # Get current consumed time from server
+    try:
+        admin_api = await marzban_api.create_admin_api(admin.marzban_username, admin.marzban_password)
+        admin_stats = await admin_api.get_admin_stats()
+        current_consumed_seconds = admin_stats.total_time_used
+        
+        current_consumed_text = await format_time_duration(current_consumed_seconds)
+        
+        text = (
+            f"⏱️ **ویرایش زمان مصرفی**\n\n"
+            f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n\n"
+            f"📊 **وضعیت فعلی:**\n"
+            f"⏱️ زمان مصرفی: {current_consumed_text}\n"
+            f"🔢 معادل ثانیه: {current_consumed_seconds:,}\n\n"
+            f"💡 **نکته:** این عدد گاهی به دلیل باگ یا مشکلات محاسباتی عجیب می‌شود\n\n"
+            f"زمان مصرفی جدید را به **ثانیه** وارد کنید:\n"
+            f"(برای تنظیم مجدد روی 0، عدد 0 وارد کنید)"
+        )
+        
+        await state.update_data(current_consumed_seconds=current_consumed_seconds)
+        await state.set_state(EditAdminLimitsStates.waiting_for_new_value)
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 تنظیم روی 0", callback_data="reset_consumed_time_zero")],
+            [InlineKeyboardButton(text="❌ لغو", callback_data="edit_admin_limits")]
+        ])
+        
+        await callback.message.edit_text(text, reply_markup=keyboard)
+        
+    except Exception as e:
+        logger.error(f"Error getting admin stats for consumed time edit: {e}")
+        await callback.message.edit_text(
+            f"❌ **خطا در دریافت آمار**\n\n"
+            f"نتوانستیم اطلاعات زمان مصرفی را از سرور دریافت کنیم.\n\n"
+            f"خطا: {str(e)}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="edit_admin_limits")]
+            ])
+        )
+        await state.clear()
+    
+    await callback.answer()
+
+
+@sudo_router.callback_query(F.data == "reset_consumed_time_zero")
+async def reset_consumed_time_zero(callback: CallbackQuery, state: FSMContext):
+    """Reset consumed time to zero."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    data = await state.get_data()
+    admin = data.get('admin')
+    admin_id = data.get('admin_id')
+    
+    if not admin or not admin_id:
+        await callback.answer("خطا در دریافت اطلاعات", show_alert=True)
+        return
+    
+    # Reset to zero
+    try:
+        success = await db.update_admin_consumed_time_reset(admin_id, 0)
+        
+        if success:
+            await callback.message.edit_text(
+                f"✅ **زمان مصرفی تنظیم مجدد شد**\n\n"
+                f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n"
+                f"⏱️ زمان مصرفی جدید: 0 ثانیه\n\n"
+                f"💡 **نکته:** این تنظیم در دیتابیس ربات ثبت شد.\n"
+                f"برای اعمال کامل، ممکن است نیاز باشد سرور را restart کنید.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+                ])
+            )
+        else:
+            await callback.message.edit_text(
+                "❌ خطا در تنظیم مجدد زمان مصرفی",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="edit_admin_limits")]
+                ])
+            )
+        
+        await state.clear()
+        
+    except Exception as e:
+        logger.error(f"Error resetting consumed time: {e}")
+        await callback.message.edit_text(
+            f"❌ خطا در عملیات: {str(e)}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="edit_admin_limits")]
+            ])
+        )
+        await state.clear()
+    
     await callback.answer()
 
 

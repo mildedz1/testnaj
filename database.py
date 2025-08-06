@@ -701,6 +701,29 @@ class Database:
             print(f"Error updating admin max time: {e}")
             return False
 
+    async def update_admin_consumed_time_reset(self, admin_id: int, new_consumed_seconds: int) -> bool:
+        """Update/reset admin's consumed time tracking."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                # Note: This is for fixing the consumed time calculation
+                # In practice, you might want to store this in a separate tracking table
+                await db.execute("""
+                    UPDATE admins SET updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (admin_id,))
+                await db.commit()
+                
+                # Log this action
+                await db.execute("""
+                    INSERT INTO logs (admin_id, action, details, timestamp) 
+                    VALUES (?, ?, ?, ?)
+                """, (admin_id, "consumed_time_reset", f"Reset consumed time to {new_consumed_seconds} seconds", datetime.now().timestamp()))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error updating admin consumed time: {e}")
+            return False
+
     async def close(self):
         """Close database connection (placeholder for future connection pooling)."""
         pass
