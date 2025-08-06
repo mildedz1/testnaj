@@ -321,8 +321,8 @@ class MonitoringScheduler:
         try:
             print(f"Starting monitoring check at {datetime.now()}")
             
-            # First, cleanup expired users
-            await self.cleanup_expired_users()
+            # DISABLED: cleanup expired users (was causing user deletion)
+            # await self.cleanup_expired_users()
             
             # Get all active admins
             admins = await db.get_all_admins()
@@ -384,8 +384,8 @@ class MonitoringScheduler:
         
         print(f"Monitoring scheduler started. Will check every {config.MONITORING_INTERVAL} seconds.")
         
-        # Run initial check
-        await self.monitor_all_admins()
+        # DISABLED: initial check (was triggering cleanup)
+        # await self.monitor_all_admins()
 
     async def stop(self):
         """Stop the monitoring scheduler."""
