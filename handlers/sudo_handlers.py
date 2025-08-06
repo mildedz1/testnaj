@@ -289,16 +289,18 @@ async def process_admin_user_id(message: Message, state: FSMContext):
         admin_user_id = int(message.text.strip())
         logger.info(f"User {user_id} entered admin user ID: {admin_user_id}")
         
-        # Check if admin already exists
-        existing_admin = await db.get_admin(admin_user_id)
-        if existing_admin:
-            logger.warning(f"Admin {admin_user_id} already exists")
+        # Check how many panels this user already has
+        existing_admins = await db.get_admins_for_user(admin_user_id)
+        if existing_admins:
+            logger.info(f"User {admin_user_id} already has {len(existing_admins)} panel(s), creating additional panel")
             await message.answer(
-                "❌ **خطا: ادمین موجود است**\n\n"
-                "این کاربر قبلاً به عنوان ادمین ثبت شده است.\n\n"
-                "💡 لطفاً User ID متفاوتی وارد کنید:"
+                f"ℹ️ **اطلاع: پنل اضافی**\n\n"
+                f"این کاربر قبلاً {len(existing_admins)} پنل دارد.\n"
+                f"پنل جدید به عنوان پنل اضافی ایجاد می‌شود.\n\n"
+                f"📋 پنل‌های موجود:\n" + 
+                '\n'.join([f"• {admin.admin_name or admin.marzban_username}" for admin in existing_admins[:3]]) +
+                (f"\n• ... و {len(existing_admins)-3} پنل دیگر" if len(existing_admins) > 3 else "")
             )
-            return
         
         # Save the user ID to state data
         await state.update_data(user_id=admin_user_id)
