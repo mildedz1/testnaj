@@ -222,9 +222,13 @@ class Database:
                 return new_admin_id
         except aiosqlite.IntegrityError as e:
             print(f"Admin already exists (marzban_username must be unique): {e}")
+            print(f"Failed to add admin with marzban_username: {admin.marzban_username}")
             return 0
         except Exception as e:
             print(f"Error adding admin: {e}")
+            print(f"Admin data: user_id={admin.user_id}, marzban_username={admin.marzban_username}")
+            import traceback
+            traceback.print_exc()
             return 0
 
     async def add_admin_legacy(self, admin: AdminModel) -> bool:
