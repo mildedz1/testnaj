@@ -141,12 +141,28 @@ class MarzbanAdminAPI:
             total_users = len(valid_users)
             active_users = len([u for u in valid_users if u.status == "active"])
             
-            # Calculate total traffic used (sum of upload and download for each user)
-            total_traffic_used = 0
+            # Calculate current traffic from existing users
+            current_traffic_used = 0
             for user in valid_users:
                 # Get user's current usage data (upload + download)
                 user_total_usage = user.used_traffic + (user.lifetime_used_traffic or 0)
-                total_traffic_used += user_total_usage
+                current_traffic_used += user_total_usage
+            
+            # Get cumulative traffic (includes deleted users' consumption)
+            from database import db
+            # For MarzbanAdminAPI, we need to find the admin_id based on username
+            # This is a workaround since we don't have direct access to admin_id here
+            admin_from_db = await db.get_admin_by_marzban_username(self.username)
+            if admin_from_db:
+                await db.initialize_cumulative_traffic(admin_from_db.id)
+                cumulative_traffic = await db.get_cumulative_traffic(admin_from_db.id)
+                # Update cumulative traffic if current is higher
+                await db.update_cumulative_traffic(admin_from_db.id, current_traffic_used)
+                # Use the maximum of cumulative and current traffic
+                total_traffic_used = max(cumulative_traffic, current_traffic_used)
+            else:
+                # Fallback to current traffic if admin not found in DB
+                total_traffic_used = current_traffic_used
             
             # Calculate total time used based on user creation/activation times
             # Note: This would need actual time tracking from Marzban API
@@ -478,12 +494,27 @@ class MarzbanAPI:
             total_users = len(valid_users)
             active_users = len([u for u in valid_users if u.status == "active"])
             
-            # Calculate total traffic used (sum of upload and download for each user)
-            total_traffic_used = 0
+            # Calculate current traffic from existing users
+            current_traffic_used = 0
             for user in valid_users:
                 # Get user's current usage data (upload + download)
                 user_total_usage = user.used_traffic + (user.lifetime_used_traffic or 0)
-                total_traffic_used += user_total_usage
+                current_traffic_used += user_total_usage
+            
+            # Get cumulative traffic (includes deleted users' consumption)
+            from database import db
+            # For MarzbanAPI get_stats, we need to find the admin_id based on username
+            admin_from_db = await db.get_admin_by_marzban_username(admin_username)
+            if admin_from_db:
+                await db.initialize_cumulative_traffic(admin_from_db.id)
+                cumulative_traffic = await db.get_cumulative_traffic(admin_from_db.id)
+                # Update cumulative traffic if current is higher
+                await db.update_cumulative_traffic(admin_from_db.id, current_traffic_used)
+                # Use the maximum of cumulative and current traffic
+                total_traffic_used = max(cumulative_traffic, current_traffic_used)
+            else:
+                # Fallback to current traffic if admin not found in DB
+                total_traffic_used = current_traffic_used
             
             # Calculate total time used based on user creation/activation times
             # Note: This would need actual time tracking from Marzban API
@@ -722,12 +753,16 @@ class MarzbanAPI:
         """Disable (deactivate) a user."""
         return await self.modify_user(username, {"status": "disabled"})
 
-    async def remove_user(self, username: str) -> bool:
-        """Remove (delete) a user."""
+    async def remove_user(self, username: str, preserve_traffic: bool = True) -> bool:
+        """Remove (delete) a user with optional traffic preservation."""
         import logging
         logger = logging.getLogger(__name__)
         
         try:
+            # Preserve traffic before deletion if requested
+            if preserve_traffic:
+                await self._preserve_user_traffic_before_deletion(username)
+            
             headers = await self.get_headers()
             
             logger.debug(f"Removing user {username} from Marzban...")
@@ -758,6 +793,39 @@ class MarzbanAPI:
         except Exception as e:
             logger.error(f"Exception while removing user {username}: {type(e).__name__}: {e}")
             return False
+
+    async def _preserve_user_traffic_before_deletion(self, username: str):
+        """Preserve user's traffic consumption in cumulative tracking before deletion."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            # Get user details to find their admin and traffic usage
+            user = await self.get_user(username)
+            if not user or not user.admin:
+                logger.debug(f"User {username} not found or has no admin assigned")
+                return
+            
+            # Calculate user's total traffic consumption
+            user_traffic = user.used_traffic + (user.lifetime_used_traffic or 0)
+            if user_traffic <= 0:
+                return
+            
+            # Find admin in database and preserve traffic
+            from database import db
+            admin_from_db = await db.get_admin_by_marzban_username(user.admin)
+            if admin_from_db:
+                await db.initialize_cumulative_traffic(admin_from_db.id)
+                # Add user's traffic to cumulative total
+                await db.add_to_cumulative_traffic(admin_from_db.id, user_traffic)
+                logger.debug(f"Preserved {user_traffic} bytes of traffic for user {username} (admin: {user.admin})")
+            else:
+                logger.warning(f"Could not find admin {user.admin} in database to preserve traffic for user {username}")
+                
+        except Exception as e:
+            logger.error(f"Error preserving traffic for user {username}: {e}")
+            # Don't fail deletion if traffic preservation fails
+            pass
 
     async def get_expired_users(self, admin_username: Optional[str] = None) -> List[MarzbanUserModel]:
         """Get list of expired users."""
@@ -941,11 +1009,32 @@ class MarzbanAPI:
         try:
             logger.info(f"Starting complete deletion of admin {admin_username} and all their users...")
             
-            # First, get all users belonging to this admin
+            # First, get all users belonging to this admin and calculate their total traffic
             admin_users = await self.get_users(admin_username)
             user_count = len(admin_users)
             
             logger.info(f"Found {user_count} users belonging to admin {admin_username}")
+            
+            # Calculate total traffic consumed by users before deletion
+            total_traffic_to_preserve = 0
+            for user in admin_users:
+                user_traffic = user.used_traffic + (user.lifetime_used_traffic or 0)
+                total_traffic_to_preserve += user_traffic
+                logger.debug(f"User {user.username} consumed {user_traffic} bytes")
+            
+            logger.info(f"Total traffic to preserve for admin {admin_username}: {total_traffic_to_preserve} bytes")
+            
+            # Update cumulative traffic before deleting users
+            from database import db
+            admin_from_db = await db.get_admin_by_marzban_username(admin_username)
+            if admin_from_db and total_traffic_to_preserve > 0:
+                await db.initialize_cumulative_traffic(admin_from_db.id)
+                # Get current cumulative traffic
+                current_cumulative = await db.get_cumulative_traffic(admin_from_db.id)
+                # Ensure we preserve at least the current traffic consumption
+                if total_traffic_to_preserve > current_cumulative:
+                    await db.update_cumulative_traffic(admin_from_db.id, total_traffic_to_preserve)
+                    logger.info(f"Updated cumulative traffic for admin {admin_username} to {total_traffic_to_preserve} bytes")
             
             # Delete all users belonging to this admin
             deleted_users_count = 0

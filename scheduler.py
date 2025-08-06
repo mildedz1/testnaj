@@ -32,6 +32,9 @@ class MonitoringScheduler:
             if not admin or not admin.is_active:
                 return LimitCheckResult(admin_user_id=admin.user_id if admin else 0)
 
+            # Initialize cumulative traffic tracking for this admin
+            await db.initialize_cumulative_traffic(admin_id)
+
             # Use admin's own credentials for authentication
             admin_api = await marzban_api.create_admin_api(admin.marzban_username, admin.marzban_password)
             
