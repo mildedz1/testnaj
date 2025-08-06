@@ -43,6 +43,13 @@ class AddExistingAdminStates(StatesGroup):
     waiting_for_confirmation = State()
 
 
+class EditAdminLimitsStates(StatesGroup):
+    waiting_for_admin_selection = State()
+    waiting_for_limit_type = State()
+    waiting_for_new_value = State()
+    waiting_for_confirmation = State()
+
+
 sudo_router = Router()
 
 
@@ -80,6 +87,7 @@ def get_sudo_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=config.BUTTONS["admin_status"], callback_data="admin_status")
         ],
         [
+            InlineKeyboardButton(text="📊 ویرایش محدودیت‌ها", callback_data="edit_admin_limits"),
             InlineKeyboardButton(text=config.BUTTONS["list_admins"], callback_data="list_admins")
         ]
     ]
@@ -90,34 +98,47 @@ def get_admin_list_keyboard(admins: List[AdminModel], action: str) -> InlineKeyb
     """Get keyboard with admin list for selection - grouped by user_id for better display."""
     buttons = []
     
-    # Group admins by user_id
-    user_panels = {}
-    for admin in admins:
-        if admin.user_id not in user_panels:
-            user_panels[admin.user_id] = []
-        user_panels[admin.user_id].append(admin)
-    
-    # Create buttons for each user (showing number of panels)
-    for user_id, user_admins in user_panels.items():
-        # Get user display info from first admin
-        first_admin = user_admins[0]
-        display_name = first_admin.username or f"ID: {user_id}"
+    if action == "edit_limits":
+        # For edit_limits, show individual admins (panels) instead of grouping by user
+        for admin in admins:
+            display_name = admin.admin_name or admin.marzban_username or f"ID: {admin.user_id}"
+            status = "✅" if admin.is_active else "❌"
+            
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"{status} {display_name}",
+                    callback_data=f"{action}_{admin.id}"
+                )
+            ])
+    else:
+        # Group admins by user_id for other actions
+        user_panels = {}
+        for admin in admins:
+            if admin.user_id not in user_panels:
+                user_panels[admin.user_id] = []
+            user_panels[admin.user_id].append(admin)
         
-        # Count active/inactive panels
-        active_panels = len([a for a in user_admins if a.is_active])
-        total_panels = len(user_admins)
-        
-        # Show status based on whether user has any active panels
-        status = "✅" if active_panels > 0 else "❌"
-        
-        panel_info = f"({active_panels}/{total_panels} پنل)" if total_panels > 1 else ""
-        
-        buttons.append([
-            InlineKeyboardButton(
-                text=f"{status} {display_name} {panel_info}",
-                callback_data=f"{action}_{user_id}"
-            )
-        ])
+        # Create buttons for each user (showing number of panels)
+        for user_id, user_admins in user_panels.items():
+            # Get user display info from first admin
+            first_admin = user_admins[0]
+            display_name = first_admin.username or f"ID: {user_id}"
+            
+            # Count active/inactive panels
+            active_panels = len([a for a in user_admins if a.is_active])
+            total_panels = len(user_admins)
+            
+            # Show status based on whether user has any active panels
+            status = "✅" if active_panels > 0 else "❌"
+            
+            panel_info = f"({active_panels}/{total_panels} پنل)" if total_panels > 1 else ""
+            
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"{status} {display_name} {panel_info}",
+                    callback_data=f"{action}_{user_id}"
+                )
+            ])
     
     buttons.append([InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -2622,3 +2643,410 @@ async def add_existing_admin_to_database(
     except Exception as e:
         logger.error(f"Error adding existing admin to database: {e}")
         return False
+
+
+# ===== EDIT ADMIN LIMITS HANDLERS =====
+
+@sudo_router.callback_query(F.data == "edit_admin_limits")
+async def edit_admin_limits_start(callback: CallbackQuery, state: FSMContext):
+    """Start editing admin limits process."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    # Get all admins
+    admins = await db.get_all_admins()
+    if not admins:
+        await callback.message.edit_text(
+            "❌ هیچ ادمینی یافت نشد.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+            ])
+        )
+        await callback.answer()
+        return
+    
+    # Show admin selection
+    await callback.message.edit_text(
+        "📊 **ویرایش محدودیت‌های ادمین**\n\n"
+        "ادمین مورد نظر را انتخاب کنید:",
+        reply_markup=get_admin_list_keyboard(admins, "edit_limits")
+    )
+    
+    await state.set_state(EditAdminLimitsStates.waiting_for_admin_selection)
+    await callback.answer()
+
+
+@sudo_router.callback_query(EditAdminLimitsStates.waiting_for_admin_selection, F.data.startswith("edit_limits_"))
+async def edit_admin_limits_select(callback: CallbackQuery, state: FSMContext):
+    """Handle admin selection for limits editing."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    admin_id = int(callback.data.split("_")[2])
+    admin = await db.get_admin_by_id(admin_id)
+    
+    if not admin:
+        await callback.message.edit_text(
+            "❌ ادمین یافت نشد.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+            ])
+        )
+        await callback.answer()
+        return
+    
+    # Store admin info in state
+    await state.update_data(admin_id=admin_id, admin=admin)
+    
+    # Show current limits and options
+    text = f"📊 **ویرایش محدودیت‌های ادمین**\n\n"
+    text += f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n"
+    text += f"🆔 User ID: `{admin.user_id}`\n\n"
+    text += f"📈 **محدودیت‌های فعلی:**\n"
+    text += f"👥 کاربران: {admin.max_users}\n"
+    text += f"📊 ترافیک: {await format_traffic_size(admin.max_total_traffic)}\n"
+    text += f"⏱️ زمان: {await format_time_duration(admin.max_total_time)}\n\n"
+    text += "کدام محدودیت را می‌خواهید ویرایش کنید؟"
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="👥 تعداد کاربران", callback_data="limit_type_users"),
+            InlineKeyboardButton(text="📊 حجم ترافیک", callback_data="limit_type_traffic")
+        ],
+        [
+            InlineKeyboardButton(text="⏱️ زمان استفاده", callback_data="limit_type_time"),
+            InlineKeyboardButton(text="🔄 تنظیم مجدد همه", callback_data="limit_type_reset")
+        ],
+        [
+            InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="edit_admin_limits")
+        ]
+    ])
+    
+    await callback.message.edit_text(text, reply_markup=keyboard)
+    await state.set_state(EditAdminLimitsStates.waiting_for_limit_type)
+    await callback.answer()
+
+
+@sudo_router.callback_query(EditAdminLimitsStates.waiting_for_limit_type, F.data.startswith("limit_type_"))
+async def edit_admin_limits_type(callback: CallbackQuery, state: FSMContext):
+    """Handle limit type selection."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    limit_type = callback.data.split("_")[2]
+    data = await state.get_data()
+    admin = data.get('admin')
+    
+    if not admin:
+        await callback.answer("خطا در دریافت اطلاعات ادمین", show_alert=True)
+        return
+    
+    await state.update_data(limit_type=limit_type)
+    
+    if limit_type == "reset":
+        # Handle reset all limits
+        text = f"🔄 **تنظیم مجدد محدودیت‌ها**\n\n"
+        text += f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n\n"
+        text += "⚠️ آیا مطمئن هستید که می‌خواهید تمام محدودیت‌ها را بر اساس مصرف فعلی تنظیم مجدد کنید؟\n\n"
+        text += "این عمل:\n"
+        text += "• کاربران فعلی + 50 (حداقل 100)\n"
+        text += "• ترافیک مصرفی + 50GB (حداقل 100GB)\n"
+        text += "• زمان مصرفی + 90 روز (حداقل 1 سال)\n"
+        text += "را تنظیم خواهد کرد."
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ تأیید", callback_data="confirm_reset_limits"),
+                InlineKeyboardButton(text="❌ لغو", callback_data="edit_admin_limits")
+            ]
+        ])
+        
+        await callback.message.edit_text(text, reply_markup=keyboard)
+        await state.set_state(EditAdminLimitsStates.waiting_for_confirmation)
+        
+    else:
+        # Handle specific limit type
+        if limit_type == "users":
+            text = f"👥 **ویرایش تعداد کاربران**\n\n"
+            text += f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n"
+            text += f"📊 محدودیت فعلی: {admin.max_users} کاربر\n\n"
+            text += "تعداد جدید کاربران را وارد کنید:"
+            
+        elif limit_type == "traffic":
+            text = f"📊 **ویرایش حجم ترافیک**\n\n"
+            text += f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n"
+            text += f"📊 محدودیت فعلی: {await format_traffic_size(admin.max_total_traffic)}\n\n"
+            text += "حجم جدید ترافیک را بر حسب گیگابایت وارد کنید:\n"
+            text += "مثال: 500 (برای 500 گیگابایت)"
+            
+        elif limit_type == "time":
+            text = f"⏱️ **ویرایش زمان استفاده**\n\n"
+            text += f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n"
+            text += f"⏱️ محدودیت فعلی: {await format_time_duration(admin.max_total_time)}\n\n"
+            text += "زمان جدید را بر حسب روز وارد کنید:\n"
+            text += "مثال: 365 (برای یک سال)"
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="edit_admin_limits")]
+        ])
+        
+        await callback.message.edit_text(text, reply_markup=keyboard)
+        await state.set_state(EditAdminLimitsStates.waiting_for_new_value)
+    
+    await callback.answer()
+
+
+@sudo_router.message(EditAdminLimitsStates.waiting_for_new_value, F.text)
+async def edit_admin_limits_value(message: Message, state: FSMContext):
+    """Handle new limit value input."""
+    if message.from_user.id not in config.SUDO_ADMINS:
+        return
+    
+    data = await state.get_data()
+    admin = data.get('admin')
+    limit_type = data.get('limit_type')
+    
+    if not admin or not limit_type:
+        await message.answer("خطا در دریافت اطلاعات. لطفاً مجدداً شروع کنید.")
+        await state.clear()
+        return
+    
+    try:
+        value = message.text.strip()
+        
+        if limit_type == "users":
+            new_value = int(value)
+            if new_value < 1:
+                await message.answer("❌ تعداد کاربران باید حداقل 1 باشد.")
+                return
+            formatted_value = f"{new_value} کاربر"
+            
+        elif limit_type == "traffic":
+            new_value_gb = float(value)
+            if new_value_gb < 0.1:
+                await message.answer("❌ حجم ترافیک باید حداقل 0.1 گیگابایت باشد.")
+                return
+            new_value = gb_to_bytes(new_value_gb)
+            formatted_value = f"{new_value_gb} گیگابایت"
+            
+        elif limit_type == "time":
+            new_value_days = int(value)
+            if new_value_days < 1:
+                await message.answer("❌ زمان باید حداقل 1 روز باشد.")
+                return
+            new_value = days_to_seconds(new_value_days)
+            formatted_value = f"{new_value_days} روز"
+        
+        # Store new value
+        await state.update_data(new_value=new_value, formatted_value=formatted_value)
+        
+        # Show confirmation
+        text = f"✅ **تأیید تغییر محدودیت**\n\n"
+        text += f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n"
+        text += f"🔄 نوع تغییر: "
+        
+        if limit_type == "users":
+            text += f"تعداد کاربران\n"
+            text += f"📊 از: {admin.max_users} کاربر\n"
+            text += f"📈 به: {formatted_value}\n"
+        elif limit_type == "traffic":
+            text += f"حجم ترافیک\n"
+            text += f"📊 از: {await format_traffic_size(admin.max_total_traffic)}\n"
+            text += f"📈 به: {formatted_value}\n"
+        elif limit_type == "time":
+            text += f"زمان استفاده\n"
+            text += f"📊 از: {await format_time_duration(admin.max_total_time)}\n"
+            text += f"📈 به: {formatted_value}\n"
+        
+        text += "\nآیا مطمئن هستید؟"
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ تأیید", callback_data="confirm_limit_change"),
+                InlineKeyboardButton(text="❌ لغو", callback_data="edit_admin_limits")
+            ]
+        ])
+        
+        await message.answer(text, reply_markup=keyboard)
+        await state.set_state(EditAdminLimitsStates.waiting_for_confirmation)
+        
+    except ValueError:
+        await message.answer("❌ مقدار وارد شده معتبر نیست. لطفاً عدد صحیح وارد کنید.")
+    except Exception as e:
+        logger.error(f"Error processing limit value: {e}")
+        await message.answer("❌ خطا در پردازش مقدار.")
+
+
+@sudo_router.callback_query(EditAdminLimitsStates.waiting_for_confirmation, F.data == "confirm_limit_change")
+async def confirm_limit_change(callback: CallbackQuery, state: FSMContext):
+    """Confirm and apply limit change."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    data = await state.get_data()
+    admin = data.get('admin')
+    limit_type = data.get('limit_type')
+    new_value = data.get('new_value')
+    formatted_value = data.get('formatted_value')
+    
+    if not all([admin, limit_type, new_value is not None]):
+        await callback.message.edit_text(
+            "❌ خطا در دریافت اطلاعات.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+            ])
+        )
+        await state.clear()
+        await callback.answer()
+        return
+    
+    try:
+        # Update the limit
+        success = False
+        if limit_type == "users":
+            success = await db.update_admin_max_users(admin.id, new_value)
+        elif limit_type == "traffic":
+            success = await db.update_admin_max_traffic(admin.id, new_value)
+        elif limit_type == "time":
+            success = await db.update_admin_max_time(admin.id, new_value)
+        
+        if success:
+            # Log the change
+            log_entry = LogModel(
+                admin_id=admin.id,
+                action=f"limit_updated_{limit_type}",
+                details=f"Updated {limit_type} limit to {formatted_value}",
+                timestamp=datetime.now().timestamp()
+            )
+            await db.add_log(log_entry)
+            
+            await callback.message.edit_text(
+                f"✅ **محدودیت با موفقیت تغییر کرد**\n\n"
+                f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n"
+                f"🔄 {limit_type}: {formatted_value}\n\n"
+                "تغییرات اعمال شده است.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+                ])
+            )
+        else:
+            await callback.message.edit_text(
+                "❌ خطا در اعمال تغییرات.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+                ])
+            )
+        
+        await state.clear()
+        
+    except Exception as e:
+        logger.error(f"Error updating admin limit: {e}")
+        await callback.message.edit_text(
+            "❌ خطا در اعمال تغییرات.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+            ])
+        )
+        await state.clear()
+    
+    await callback.answer()
+
+
+@sudo_router.callback_query(EditAdminLimitsStates.waiting_for_confirmation, F.data == "confirm_reset_limits")
+async def confirm_reset_limits(callback: CallbackQuery, state: FSMContext):
+    """Confirm and apply limits reset based on current usage."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    data = await state.get_data()
+    admin = data.get('admin')
+    
+    if not admin:
+        await callback.message.edit_text(
+            "❌ خطا در دریافت اطلاعات ادمین.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+            ])
+        )
+        await state.clear()
+        await callback.answer()
+        return
+    
+    try:
+        # Get current usage stats
+        admin_api = await marzban_api.create_admin_api(admin.marzban_username, admin.marzban_password)
+        admin_stats = await admin_api.get_admin_stats()
+        
+        if not admin_stats:
+            await callback.message.edit_text(
+                "❌ خطا در دریافت آمار فعلی ادمین.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+                ])
+            )
+            await state.clear()
+            await callback.answer()
+            return
+        
+        # Calculate new limits
+        traffic_buffer = 50 * 1024 * 1024 * 1024  # 50GB buffer
+        max_traffic = max(admin_stats.total_traffic_used + traffic_buffer, 100 * 1024 * 1024 * 1024)  # At least 100GB
+        
+        time_buffer = 90 * 24 * 3600  # 90 days
+        max_time = max(admin_stats.total_time_used + time_buffer, 365 * 24 * 3600)  # At least 1 year
+        
+        max_users = max(admin_stats.total_users + 50, 100)  # Current users + 50, at least 100
+        
+        # Update all limits
+        success_users = await db.update_admin_max_users(admin.id, max_users)
+        success_traffic = await db.update_admin_max_traffic(admin.id, max_traffic)
+        success_time = await db.update_admin_max_time(admin.id, max_time)
+        
+        if success_users and success_traffic and success_time:
+            # Log the changes
+            log_entry = LogModel(
+                admin_id=admin.id,
+                action="limits_reset",
+                details=f"Reset all limits - Users: {max_users}, Traffic: {await format_traffic_size(max_traffic)}, Time: {await format_time_duration(max_time)}",
+                timestamp=datetime.now().timestamp()
+            )
+            await db.add_log(log_entry)
+            
+            await callback.message.edit_text(
+                f"✅ **محدودیت‌ها با موفقیت تنظیم مجدد شد**\n\n"
+                f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n\n"
+                f"📈 **محدودیت‌های جدید:**\n"
+                f"👥 کاربران: {max_users}\n"
+                f"📊 ترافیک: {await format_traffic_size(max_traffic)}\n"
+                f"⏱️ زمان: {await format_time_duration(max_time)}\n\n"
+                "بر اساس مصرف فعلی + بافر اضافی تنظیم شده است.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+                ])
+            )
+        else:
+            await callback.message.edit_text(
+                "❌ خطا در اعمال تغییرات.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+                ])
+            )
+        
+        await state.clear()
+        
+    except Exception as e:
+        logger.error(f"Error resetting admin limits: {e}")
+        await callback.message.edit_text(
+            "❌ خطا در تنظیم مجدد محدودیت‌ها.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+            ])
+        )
+        await state.clear()
+    
+    await callback.answer()

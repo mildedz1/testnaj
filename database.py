@@ -659,6 +659,48 @@ class Database:
             print(f"Error executing query: {e}")
             return False
 
+    async def update_admin_max_users(self, admin_id: int, max_users: int) -> bool:
+        """Update admin's max users limit."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    UPDATE admins SET max_users = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (max_users, admin_id))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error updating admin max users: {e}")
+            return False
+
+    async def update_admin_max_traffic(self, admin_id: int, max_traffic: int) -> bool:
+        """Update admin's max traffic limit."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    UPDATE admins SET max_total_traffic = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (max_traffic, admin_id))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error updating admin max traffic: {e}")
+            return False
+
+    async def update_admin_max_time(self, admin_id: int, max_time: int) -> bool:
+        """Update admin's max time limit."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    UPDATE admins SET max_total_time = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (max_time, admin_id))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error updating admin max time: {e}")
+            return False
+
     async def close(self):
         """Close database connection (placeholder for future connection pooling)."""
         pass
