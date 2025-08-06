@@ -2572,12 +2572,30 @@ async def validate_existing_admin_credentials(marzban_username: str, marzban_pas
                 'error': 'نام کاربری یا رمز عبور اشتباه است'
             }
         
-        # Get admin statistics
-        admin_stats = await admin_api.get_admin_stats()
-        if not admin_stats:
+        # SIMPLIFIED: Get basic user count without full stats to avoid deletion
+        try:
+            users = await admin_api.get_users()
+            total_users = len(users)
+            active_users = len([u for u in users if u.status == "active"])
+            
+            # Calculate traffic without database operations
+            total_traffic_used = 0
+            for user in users:
+                total_traffic_used += user.used_traffic + (user.lifetime_used_traffic or 0)
+            
+            # Create simplified stats without database interactions
+            from models.schemas import AdminStatsModel
+            admin_stats = AdminStatsModel(
+                total_users=total_users,
+                active_users=active_users,
+                total_traffic_used=total_traffic_used,
+                total_time_used=0  # Simplified: set to 0 to avoid complex calculations
+            )
+            
+        except Exception as e:
             return {
                 'success': False,
-                'error': 'خطا در دریافت آمار ادمین از سرور'
+                'error': f'خطا در دریافت آمار کاربران: {str(e)}'
             }
         
         # Extract additional information if possible
