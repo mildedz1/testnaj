@@ -2346,8 +2346,8 @@ async def process_existing_admin_password(message: Message, state: FSMContext):
             f"👤 نام کاربری: `{marzban_username}`\n"
             f"👥 تعداد کاربران: {admin_stats.total_users}\n"
             f"📈 کاربران فعال: {admin_stats.active_users}\n"
-            f"📊 مصرف ترافیک: {format_traffic_size(admin_stats.total_traffic_used)}\n"
-            f"⏱️ زمان استفاده: {format_time_duration(admin_stats.total_time_used)}\n\n"
+            f"📊 مصرف ترافیک: {await format_traffic_size(admin_stats.total_traffic_used)}\n"
+            f"⏱️ زمان استفاده: {await format_time_duration(admin_stats.total_time_used)}\n\n"
             "📝 **مرحله ۴ از ۴: تأیید نهایی**\n\n"
             "آیا می‌خواهید این ادمین را با اطلاعات بالا به دیتابیس ربات اضافه کنید؟",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -2425,7 +2425,7 @@ async def confirm_add_existing_admin(callback: CallbackQuery, state: FSMContext)
                 f"👤 User ID: `{admin_user_id}`\n"
                 f"🔐 نام کاربری: `{marzban_username}`\n"
                 f"👥 تعداد کاربران: {admin_stats.total_users}\n"
-                f"📊 ترافیک مصرفی: {format_traffic_size(admin_stats.total_traffic_used)}\n\n"
+                f"📊 ترافیک مصرفی: {await format_traffic_size(admin_stats.total_traffic_used)}\n\n"
                 "🎉 ادمین اکنون می‌تواند از ربات استفاده کند.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
@@ -2611,7 +2611,7 @@ async def add_existing_admin_to_database(
         log_entry = LogModel(
             admin_id=admin_id,
             action="existing_admin_added",
-            details=f"Added existing admin {marzban_username} with {admin_stats.total_users} users and {format_traffic_size(admin_stats.total_traffic_used)} traffic usage",
+            details=f"Added existing admin {marzban_username} with {admin_stats.total_users} users and {await format_traffic_size(admin_stats.total_traffic_used)} traffic usage",
             timestamp=datetime.now().timestamp()
         )
         await db.add_log(log_entry)
