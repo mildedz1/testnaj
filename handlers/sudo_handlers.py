@@ -2930,16 +2930,18 @@ async def edit_admin_limits_type(callback: CallbackQuery, state: FSMContext):
                 current_consumed_seconds = admin_stats.total_time_used
                 
                 current_consumed_text = await format_time_duration(current_consumed_seconds)
+                current_consumed_days = current_consumed_seconds // (24 * 3600)
                 
                 text = (
                     f"⏱️ **ویرایش زمان مصرف شده**\n\n"
                     f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n\n"
                     f"📊 **وضعیت فعلی:**\n"
                     f"⏱️ زمان مصرف شده: {current_consumed_text}\n"
-                    f"🔢 معادل ثانیه: {current_consumed_seconds:,}\n\n"
+                    f"📅 معادل روز: {current_consumed_days} روز\n\n"
                     f"💡 **نکته:** این عدد گاهی به دلیل باگ یا مشکلات محاسباتی عجیب می‌شود\n\n"
-                    f"زمان مصرف شده جدید را به **ثانیه** وارد کنید:\n"
-                    f"(برای تنظیم مجدد روی 0، عدد 0 وارد کنید)"
+                    f"چند روز از ساخت پنل گذشته؟ (عدد روز وارد کنید):\n"
+                    f"مثال: 30 (برای 30 روز)\n"
+                    f"برای تنظیم مجدد روی 0، عدد 0 وارد کنید"
                 )
                 
                 await state.update_data(
@@ -3237,5 +3239,75 @@ async def confirm_reset_limits(callback: CallbackQuery, state: FSMContext):
         await state.clear()
     
     await callback.answer()
+
+
+@sudo_router.message(EditAdminLimitsStates.waiting_for_new_value, F.text)
+async def edit_consumed_time_days_value(message: Message, state: FSMContext):
+    """Handle consumed time value input in days."""
+    if message.from_user.id not in config.SUDO_ADMINS:
+        return
+    
+    data = await state.get_data()
+    admin = data.get('admin')
+    admin_id = data.get('admin_id')
+    limit_type = data.get('limit_type')
+    
+    # Only handle consumed_time
+    if limit_type != "consumed_time":
+        return
+    
+    if not admin or not admin_id:
+        await message.answer("خطا در دریافت اطلاعات. لطفاً مجدداً شروع کنید.")
+        await state.clear()
+        return
+    
+    try:
+        # Parse input value as days
+        value = message.text.strip()
+        new_consumed_days = int(value)
+        
+        if new_consumed_days < 0:
+            await message.answer("❌ تعداد روز نمی‌تواند منفی باشد.")
+            return
+            
+        # Convert days to seconds
+        new_consumed_seconds = new_consumed_days * 24 * 3600
+        
+        # Apply the time reset
+        success = await db.set_time_usage_reset(admin_id, new_consumed_seconds)
+        
+        if success:
+            formatted_time = await format_time_duration(new_consumed_seconds)
+            await message.answer(
+                f"✅ **زمان مصرف شده تغییر یافت**\n\n"
+                f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n"
+                f"📅 روز وارد شده: {new_consumed_days} روز\n"
+                f"⏱️ زمان مصرف شده جدید: {formatted_time}\n"
+                f"🔢 معادل ثانیه: {new_consumed_seconds:,}\n\n"
+                f"🔄 **از این لحظه:**\n"
+                f"• زمان مصرف شده از {formatted_time} شروع می‌شود\n"
+                f"• با گذشت زمان واقعی، افزایش پیدا می‌کند\n"
+                f"• سیستم هشدار و محدودیت عادی کار می‌کند\n\n"
+                f"⏰ **مثال:** اگر 1 روز از الان بگذرد، زمان مصرف شده {new_consumed_days + 1} روز خواهد بود.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+                ])
+            )
+        else:
+            await message.answer(
+                "❌ خطا در تنظیم زمان مصرف شده",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="edit_admin_limits")]
+                ])
+            )
+        
+        await state.clear()
+        
+    except ValueError:
+        await message.answer("❌ مقدار وارد شده معتبر نیست. لطفاً عدد صحیح (روز) وارد کنید.")
+    except Exception as e:
+        logger.error(f"Error updating admin consumed time: {e}")
+        await message.answer(f"❌ خطا در عملیات: {str(e)}")
+        await state.clear()
 
 
