@@ -2004,6 +2004,11 @@ async def deactivate_admin_and_users(admin_user_id: int, reason: str = "Limit ex
 
 async def delete_admin_panel_completely(admin_id: int, reason: str = "غیرفعالسازی دستی توسط سودو") -> bool:
     """Completely delete admin panel and all their users from both Marzban and database (for manual deactivation)."""
+
+    # EMERGENCY STOP: Deletion temporarily disabled
+    print("🚨 EMERGENCY: Admin deletion is temporarily disabled!")
+    print("To re-enable, remove this emergency check from the code.")
+    return False
     try:
         admin = await db.get_admin_by_id(admin_id)
         if not admin:
