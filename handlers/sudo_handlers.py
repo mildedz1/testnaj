@@ -2836,7 +2836,11 @@ async def edit_consumed_time_start(callback: CallbackQuery, state: FSMContext):
             f"(برای تنظیم مجدد روی 0، عدد 0 وارد کنید)"
         )
         
-        await state.update_data(current_consumed_seconds=current_consumed_seconds)
+        await state.update_data(
+            current_consumed_seconds=current_consumed_seconds,
+            admin_id=admin.id,
+            limit_type="consumed_time"
+        )
         await state.set_state(EditAdminLimitsStates.waiting_for_new_value)
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -2878,19 +2882,18 @@ async def reset_consumed_time_zero(callback: CallbackQuery, state: FSMContext):
     
     # Reset to zero
     try:
-        success = await db.set_time_usage_override(admin_id, 0)
+        success = await db.set_time_usage_reset(admin_id, 0)
         
         if success:
             await callback.message.edit_text(
                 f"✅ **زمان مصرف شده تنظیم مجدد شد**\n\n"
                 f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n"
                 f"⏱️ زمان مصرف شده جدید: 0 ثانیه\n\n"
-                f"🔄 **اکنون override فعال است:**\n"
-                f"• زمان مصرف شده این ادمین ثابت روی 0 باقی می‌ماند\n"
-                f"• تا زمانی که override را clear نکنید\n"
-                f"• برای غیرفعال کردن، دوباره این قسمت را استفاده کنید\n\n"
-                f"⚠️ **نکته:** اگر در آینده خواستید override را غیرفعال کنید،\n"
-                f"از همین منو استفاده کنید و مقدار واقعی را وارد کنید.",
+                f"🔄 **از این لحظه:**\n"
+                f"• زمان مصرف شده از صفر شروع شده\n"
+                f"• با گذشت زمان واقعی، افزایش پیدا می‌کند\n"
+                f"• سیستم هشدار و محدودیت عادی کار می‌کند\n\n"
+                f"⏰ **مثال:** اگر 10 دقیقه از الان بگذرد، زمان مصرف شده 10 دقیقه خواهد بود.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
                 ])
@@ -2997,6 +3000,10 @@ async def edit_admin_limits_value(message: Message, state: FSMContext):
     data = await state.get_data()
     admin = data.get('admin')
     limit_type = data.get('limit_type')
+    
+    # Skip if this is for consumed time (handled by another handler)
+    if limit_type == "consumed_time":
+        return
     
     if not admin or not limit_type:
         await message.answer("خطا در دریافت اطلاعات. لطفاً مجدداً شروع کنید.")
@@ -3239,3 +3246,5 @@ async def confirm_reset_limits(callback: CallbackQuery, state: FSMContext):
         await state.clear()
     
     await callback.answer()
+
+

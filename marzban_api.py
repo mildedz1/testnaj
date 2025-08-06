@@ -167,13 +167,19 @@ class MarzbanAdminAPI:
             # Calculate total time used based on user creation/activation times
             # Note: This would need actual time tracking from Marzban API
             # For now, we estimate based on user activity
-            total_time_used = 0
+            marzban_time_used = 0
             for user in valid_users:
                 if user.expire and user.status == "active":
                     # Estimate time used (this is approximate)
                     creation_time = datetime.now().timestamp() - (30 * 24 * 3600)  # Assume 30 days ago
                     time_used = datetime.now().timestamp() - creation_time
-                    total_time_used += int(time_used)
+                    marzban_time_used += int(time_used)
+            
+            # Apply time reset if exists
+            if admin_from_db:
+                total_time_used = await db.get_time_usage_with_reset(admin_from_db.id, marzban_time_used)
+            else:
+                total_time_used = marzban_time_used
             
             return AdminStatsModel(
                 total_users=total_users,
