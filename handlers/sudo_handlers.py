@@ -96,6 +96,7 @@ def get_sudo_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🎁 پاداش کاربران", callback_data="reward_users")
         ],
         [
+            InlineKeyboardButton(text="🛒 مدیریت فروش", callback_data="sales_management"),
             InlineKeyboardButton(text=config.BUTTONS["list_admins"], callback_data="list_admins")
         ]
     ]

@@ -146,6 +146,61 @@ class Database:
                 ON time_usage_override(admin_id)
             """)
 
+            # Create panel sales products table
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS sales_products (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    price INTEGER NOT NULL,
+                    currency TEXT DEFAULT 'تومان',
+                    max_users INTEGER NOT NULL,
+                    max_traffic INTEGER NOT NULL,
+                    max_time INTEGER NOT NULL,
+                    validity_days INTEGER DEFAULT 30,
+                    is_active BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Create payment methods table
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS payment_methods (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    method_name TEXT NOT NULL,
+                    card_number TEXT,
+                    card_holder_name TEXT,
+                    bank_name TEXT,
+                    is_active BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Create sales orders table
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS sales_orders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    customer_user_id INTEGER NOT NULL,
+                    customer_username TEXT,
+                    customer_first_name TEXT,
+                    customer_last_name TEXT,
+                    product_id INTEGER NOT NULL,
+                    product_snapshot TEXT,
+                    total_price INTEGER NOT NULL,
+                    payment_method_id INTEGER,
+                    payment_screenshot_file_id TEXT,
+                    status TEXT DEFAULT 'pending',
+                    admin_notes TEXT,
+                    created_panel_id INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    processed_at TIMESTAMP,
+                    FOREIGN KEY (product_id) REFERENCES sales_products(id),
+                    FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id),
+                    FOREIGN KEY (created_panel_id) REFERENCES admins(id)
+                )
+            """)
+
             # Initialize cumulative traffic tracking for existing admins
             await self._initialize_cumulative_tracking_for_existing_admins(db)
 
@@ -792,6 +847,190 @@ class Database:
         except Exception as e:
             print(f"Error clearing time usage reset: {e}")
             return False
+
+    # Sales System Functions
+    
+    async def add_sales_product(self, name: str, description: str, price: int, max_users: int, 
+                               max_traffic: int, max_time: int, validity_days: int = 30) -> bool:
+        """Add a new sales product."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    INSERT INTO sales_products (name, description, price, max_users, max_traffic, max_time, validity_days)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (name, description, price, max_users, max_traffic, max_time, validity_days))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error adding sales product: {e}")
+            return False
+
+    async def get_sales_products(self, active_only: bool = True):
+        """Get all sales products."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                query = "SELECT * FROM sales_products"
+                if active_only:
+                    query += " WHERE is_active = 1"
+                query += " ORDER BY price ASC"
+                
+                async with db.execute(query) as cursor:
+                    rows = await cursor.fetchall()
+                    return [dict(row) for row in rows]
+        except Exception as e:
+            print(f"Error getting sales products: {e}")
+            return []
+
+    async def update_sales_product(self, product_id: int, **kwargs) -> bool:
+        """Update a sales product."""
+        try:
+            if not kwargs:
+                return False
+            
+            set_clause = ", ".join([f"{key} = ?" for key in kwargs.keys()])
+            values = list(kwargs.values()) + [product_id]
+            
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(f"""
+                    UPDATE sales_products SET {set_clause}, updated_at = CURRENT_TIMESTAMP 
+                    WHERE id = ?
+                """, values)
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error updating sales product: {e}")
+            return False
+
+    async def add_payment_method(self, method_name: str, card_number: str, 
+                                card_holder_name: str, bank_name: str) -> bool:
+        """Add a new payment method."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    INSERT INTO payment_methods (method_name, card_number, card_holder_name, bank_name)
+                    VALUES (?, ?, ?, ?)
+                """, (method_name, card_number, card_holder_name, bank_name))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error adding payment method: {e}")
+            return False
+
+    async def get_payment_methods(self, active_only: bool = True):
+        """Get all payment methods."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                query = "SELECT * FROM payment_methods"
+                if active_only:
+                    query += " WHERE is_active = 1"
+                query += " ORDER BY id ASC"
+                
+                async with db.execute(query) as cursor:
+                    rows = await cursor.fetchall()
+                    return [dict(row) for row in rows]
+        except Exception as e:
+            print(f"Error getting payment methods: {e}")
+            return []
+
+    async def create_sales_order(self, customer_user_id: int, customer_username: str,
+                                customer_first_name: str, customer_last_name: str,
+                                product_id: int, total_price: int, product_snapshot: str) -> int:
+        """Create a new sales order."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute("""
+                    INSERT INTO sales_orders (customer_user_id, customer_username, customer_first_name, 
+                                            customer_last_name, product_id, total_price, product_snapshot)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (customer_user_id, customer_username, customer_first_name, 
+                      customer_last_name, product_id, total_price, product_snapshot))
+                order_id = cursor.lastrowid
+                await db.commit()
+                return order_id
+        except Exception as e:
+            print(f"Error creating sales order: {e}")
+            return 0
+
+    async def update_order_payment(self, order_id: int, payment_method_id: int, screenshot_file_id: str) -> bool:
+        """Update order with payment information."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    UPDATE sales_orders SET payment_method_id = ?, payment_screenshot_file_id = ?
+                    WHERE id = ?
+                """, (payment_method_id, screenshot_file_id, order_id))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error updating order payment: {e}")
+            return False
+
+    async def get_pending_orders(self):
+        """Get all pending orders for admin review."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute("""
+                    SELECT o.*, p.name as product_name, p.description as product_description,
+                           pm.method_name, pm.card_number
+                    FROM sales_orders o
+                    LEFT JOIN sales_products p ON o.product_id = p.id
+                    LEFT JOIN payment_methods pm ON o.payment_method_id = pm.id
+                    WHERE o.status = 'pending'
+                    ORDER BY o.created_at ASC
+                """) as cursor:
+                    rows = await cursor.fetchall()
+                    return [dict(row) for row in rows]
+        except Exception as e:
+            print(f"Error getting pending orders: {e}")
+            return []
+
+    async def approve_order(self, order_id: int, created_panel_id: int) -> bool:
+        """Approve an order and mark panel as created."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    UPDATE sales_orders SET status = 'approved', created_panel_id = ?, processed_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (created_panel_id, order_id))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error approving order: {e}")
+            return False
+
+    async def reject_order(self, order_id: int, admin_notes: str) -> bool:
+        """Reject an order with notes."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    UPDATE sales_orders SET status = 'rejected', admin_notes = ?, processed_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (admin_notes, order_id))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error rejecting order: {e}")
+            return False
+
+    async def get_order_by_id(self, order_id: int):
+        """Get order details by ID."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute("""
+                    SELECT o.*, p.name as product_name, p.max_users, p.max_traffic, p.max_time, p.validity_days
+                    FROM sales_orders o
+                    LEFT JOIN sales_products p ON o.product_id = p.id
+                    WHERE o.id = ?
+                """, (order_id,)) as cursor:
+                    row = await cursor.fetchone()
+                    return dict(row) if row else None
+        except Exception as e:
+            print(f"Error getting order by ID: {e}")
+            return None
 
     async def close(self):
         """Close database connection (placeholder for future connection pooling)."""

@@ -14,6 +14,7 @@ from marzban_api import marzban_api
 from handlers.sudo_handlers import sudo_router
 from handlers.admin_handlers import admin_router
 from handlers.reward_handlers import reward_router
+from handlers.sales_handlers import sales_router
 from scheduler import init_scheduler
 
 
@@ -74,6 +75,10 @@ class MarzbanAdminBot:
         logger.info("Registering reward_router (FSM-aware)...")
         self.dp.include_router(reward_router)
         logger.info("✅ reward_router registered successfully")
+        
+        logger.info("Registering sales_router (FSM-aware)...")
+        self.dp.include_router(sales_router)
+        logger.info("✅ sales_router registered successfully")
         
         logger.info("=== GENERAL HANDLERS (AFTER FSM ROUTERS) ===")
         # Add global handlers AFTER state-specific routers
@@ -170,7 +175,18 @@ class MarzbanAdminBot:
         
         # This will only be reached if user is not sudo and not authorized admin
         if user_id not in config.SUDO_ADMINS and not await db.is_admin_authorized(user_id):
-            await message.answer(config.MESSAGES["unauthorized"])
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🛒 خرید پنل", callback_data="buy_panel")]
+            ])
+            
+            await message.answer(
+                f"{config.MESSAGES['unauthorized']}\n\n"
+                f"🛒 **می‌توانید پنل جدید خریداری کنید:**\n"
+                f"با کلیک بر روی دکمه زیر، محصولات موجود را مشاهده کنید.",
+                reply_markup=keyboard
+            )
             logger.warning(f"Unauthorized access attempt from user {user_id}, message: {message.text}")
 
     async def general_message_handler(self, message: Message, state: FSMContext = None):

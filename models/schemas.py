@@ -70,3 +70,46 @@ class LimitCheckResult(BaseModel):
     message: Optional[str] = None
     limits_data: Dict[str, Any] = Field(default_factory=dict)
     affected_users: List[str] = Field(default_factory=list)
+
+
+class SalesProductModel(BaseModel):
+    id: Optional[int] = None
+    name: str
+    description: Optional[str] = None
+    price: int
+    currency: str = "تومان"
+    max_users: int
+    max_traffic: int  # in bytes
+    max_time: int     # in seconds
+    validity_days: int = 30
+    is_active: bool = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class PaymentMethodModel(BaseModel):
+    id: Optional[int] = None
+    method_name: str
+    card_number: str
+    card_holder_name: str
+    bank_name: str
+    is_active: bool = True
+    created_at: Optional[datetime] = None
+
+
+class SalesOrderModel(BaseModel):
+    id: Optional[int] = None
+    customer_user_id: int
+    customer_username: Optional[str] = None
+    customer_first_name: Optional[str] = None
+    customer_last_name: Optional[str] = None
+    product_id: int
+    product_snapshot: Optional[str] = None  # JSON snapshot of product at time of order
+    total_price: int
+    payment_method_id: Optional[int] = None
+    payment_screenshot_file_id: Optional[str] = None
+    status: str = "pending"  # pending, approved, rejected
+    admin_notes: Optional[str] = None
+    created_panel_id: Optional[int] = None
+    created_at: Optional[datetime] = None
+    processed_at: Optional[datetime] = None
