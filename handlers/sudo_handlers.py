@@ -2402,6 +2402,8 @@ async def confirm_add_existing_admin(callback: CallbackQuery, state: FSMContext)
     )
     
     try:
+        logger.info(f"Confirming addition of existing admin: user_id={admin_user_id}, marzban_username={marzban_username}")
+        
         # Add admin to database
         success = await add_existing_admin_to_database(
             user_id=admin_user_id,
@@ -2410,6 +2412,8 @@ async def confirm_add_existing_admin(callback: CallbackQuery, state: FSMContext)
             admin_stats=admin_stats,
             extracted_info=extracted_info
         )
+        
+        logger.info(f"Admin addition result: success={success}")
         
         if success:
             # Clear state
@@ -2545,6 +2549,17 @@ async def add_existing_admin_to_database(
     try:
         logger.info(f"Adding existing admin to database: user_id={user_id}, username={marzban_username}")
         
+        # Validate input parameters
+        if not user_id or not marzban_username or not marzban_password:
+            logger.error(f"Missing required parameters: user_id={user_id}, marzban_username={marzban_username}, marzban_password={'***' if marzban_password else None}")
+            return False
+        
+        if not admin_stats:
+            logger.error("admin_stats is None or empty")
+            return False
+        
+        logger.info(f"Admin stats: users={admin_stats.total_users}, traffic={admin_stats.total_traffic_used}, time={admin_stats.total_time_used}")
+        
         # Create admin model with current stats as limits
         # We'll use current traffic usage + some buffer as the limit
         traffic_buffer = 50 * 1024 * 1024 * 1024  # 50GB buffer
@@ -2565,20 +2580,32 @@ async def add_existing_admin_to_database(
             max_total_traffic=max_traffic,
             max_total_time=max_time,
             max_users=max(admin_stats.total_users + 50, 100),  # Current users + buffer, at least 100
+            validity_days=365,  # Set validity to 1 year for existing admins
             is_active=True,
-            created_at=datetime.now().timestamp(),
-            updated_at=datetime.now().timestamp()
+            created_at=datetime.now(),  # Use datetime object instead of timestamp
+            updated_at=datetime.now()   # Use datetime object instead of timestamp
         )
         
         # Add to database
+        logger.info(f"Attempting to add admin to database: {marzban_username} for user {user_id}")
         admin_id = await db.add_admin(admin_data)
         if not admin_id:
-            logger.error(f"Failed to add admin {user_id} to database")
+            logger.error(f"Failed to add admin {user_id} to database - add_admin returned 0 or None")
             return False
         
+        logger.info(f"Admin successfully added to database with ID: {admin_id}")
+        
         # Initialize cumulative traffic tracking
-        await db.initialize_cumulative_traffic(admin_id)
-        await db.update_cumulative_traffic(admin_id, admin_stats.total_traffic_used)
+        logger.info(f"Initializing cumulative traffic tracking for admin {admin_id}")
+        traffic_init_success = await db.initialize_cumulative_traffic(admin_id)
+        if not traffic_init_success:
+            logger.warning(f"Failed to initialize cumulative traffic for admin {admin_id}")
+        
+        traffic_update_success = await db.update_cumulative_traffic(admin_id, admin_stats.total_traffic_used)
+        if traffic_update_success:
+            logger.info(f"Updated cumulative traffic for admin {admin_id}: {admin_stats.total_traffic_used} bytes")
+        else:
+            logger.info(f"Cumulative traffic not updated for admin {admin_id} (current: {admin_stats.total_traffic_used})")
         
         # Log the successful addition
         log_entry = LogModel(
