@@ -14,7 +14,9 @@ import config
 from database import db
 from marzban_api import marzban_api
 from models.schemas import LogModel
-from utils.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 class RewardUsersStates(StatesGroup):
     waiting_for_reward_type = State()
