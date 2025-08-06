@@ -2791,6 +2791,11 @@ async def edit_admin_limits_select(callback: CallbackQuery, state: FSMContext):
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
+            InlineKeyboardButton(text="👥 تعداد کاربران", callback_data="limit_type_users"),
+            InlineKeyboardButton(text="📊 حجم ترافیک", callback_data="limit_type_traffic")
+        ],
+        [
+            InlineKeyboardButton(text="⏱️ زمان استفاده", callback_data="limit_type_time"),
             InlineKeyboardButton(text="⏱️ زمان مصرف شده", callback_data="limit_type_consumed")
         ],
         [
