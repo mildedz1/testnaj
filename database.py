@@ -129,6 +129,23 @@ class Database:
                 ON cumulative_traffic(admin_id)
             """)
 
+            # Create time_usage_override table for manual time adjustments
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS time_usage_override (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    admin_id INTEGER NOT NULL,
+                    override_time_used INTEGER DEFAULT 0,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (admin_id) REFERENCES admins(id)
+                )
+            """)
+
+            # Create unique index on admin_id for time_usage_override
+            await db.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_time_usage_override_admin_id 
+                ON time_usage_override(admin_id)
+            """)
+
             # Initialize cumulative traffic tracking for existing admins
             await self._initialize_cumulative_tracking_for_existing_admins(db)
 
@@ -701,16 +718,16 @@ class Database:
             print(f"Error updating admin max time: {e}")
             return False
 
-    async def update_admin_consumed_time_reset(self, admin_id: int, new_consumed_seconds: int) -> bool:
-        """Update/reset admin's consumed time tracking."""
+    async def set_time_usage_override(self, admin_id: int, override_time_seconds: int) -> bool:
+        """Set manual time usage override for admin."""
         try:
             async with aiosqlite.connect(self.db_path) as db:
-                # Note: This is for fixing the consumed time calculation
-                # In practice, you might want to store this in a separate tracking table
+                # Insert or update time override
                 await db.execute("""
-                    UPDATE admins SET updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                """, (admin_id,))
+                    INSERT OR REPLACE INTO time_usage_override 
+                    (admin_id, override_time_used, last_updated) 
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                """, (admin_id, override_time_seconds))
                 await db.commit()
                 
                 # Get admin info for logging
@@ -721,11 +738,38 @@ class Database:
                 await db.execute("""
                     INSERT INTO logs (admin_user_id, action, details, timestamp) 
                     VALUES (?, ?, ?, ?)
-                """, (admin_user_id, "consumed_time_reset", f"Reset consumed time to {new_consumed_seconds} seconds", datetime.now().timestamp()))
+                """, (admin_user_id, "time_usage_override", f"Set time usage override to {override_time_seconds} seconds", datetime.now().timestamp()))
                 await db.commit()
                 return True
         except Exception as e:
-            print(f"Error updating admin consumed time: {e}")
+            print(f"Error setting time usage override: {e}")
+            return False
+
+    async def get_time_usage_override(self, admin_id: int) -> int:
+        """Get manual time usage override for admin."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("""
+                    SELECT override_time_used FROM time_usage_override 
+                    WHERE admin_id = ?
+                """, (admin_id,)) as cursor:
+                    row = await cursor.fetchone()
+                    return row[0] if row else None
+        except Exception as e:
+            print(f"Error getting time usage override: {e}")
+            return None
+
+    async def clear_time_usage_override(self, admin_id: int) -> bool:
+        """Clear manual time usage override for admin."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    DELETE FROM time_usage_override WHERE admin_id = ?
+                """, (admin_id,))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error clearing time usage override: {e}")
             return False
 
     async def close(self):

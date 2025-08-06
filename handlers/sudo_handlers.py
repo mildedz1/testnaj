@@ -2878,15 +2878,19 @@ async def reset_consumed_time_zero(callback: CallbackQuery, state: FSMContext):
     
     # Reset to zero
     try:
-        success = await db.update_admin_consumed_time_reset(admin_id, 0)
+        success = await db.set_time_usage_override(admin_id, 0)
         
         if success:
             await callback.message.edit_text(
                 f"✅ **زمان مصرف شده تنظیم مجدد شد**\n\n"
                 f"👤 ادمین: {admin.admin_name or admin.marzban_username}\n"
                 f"⏱️ زمان مصرف شده جدید: 0 ثانیه\n\n"
-                f"💡 **نکته:** این تنظیم در دیتابیس ربات ثبت شد.\n"
-                f"برای اعمال کامل، ممکن است نیاز باشد سرور را restart کنید.",
+                f"🔄 **اکنون override فعال است:**\n"
+                f"• زمان مصرف شده این ادمین ثابت روی 0 باقی می‌ماند\n"
+                f"• تا زمانی که override را clear نکنید\n"
+                f"• برای غیرفعال کردن، دوباره این قسمت را استفاده کنید\n\n"
+                f"⚠️ **نکته:** اگر در آینده خواستید override را غیرفعال کنید،\n"
+                f"از همین منو استفاده کنید و مقدار واقعی را وارد کنید.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
                 ])
