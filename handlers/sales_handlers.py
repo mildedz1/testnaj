@@ -1761,11 +1761,31 @@ async def select_customer_payment_type(callback: CallbackQuery, state: FSMContex
     
     # Show payment instructions
     if payment_type == "card":
-        card_info = format_card_info(
-            selected_method['card_number'], 
-            selected_method['card_holder_name'], 
-            selected_method['bank_name']
-        )
+        # Handle new payment_details format
+        if selected_method.get('payment_details'):
+            try:
+                details = json.loads(selected_method['payment_details'])
+                cards = details.get('cards', [])
+                if cards:
+                    # Use first card
+                    card = cards[0]
+                    card_info = format_card_info(
+                        card.get('number', ''),
+                        card.get('holder', ''),
+                        card.get('bank', '')
+                    )
+                else:
+                    card_info = "❌ اطلاعات کارت موجود نیست"
+            except:
+                card_info = "❌ خطا در خواندن اطلاعات کارت"
+        else:
+            # Legacy fallback
+            card_info = format_card_info(
+                selected_method.get('card_number', ''),
+                selected_method.get('card_holder_name', ''),
+                selected_method.get('bank_name', '')
+            )
+            
         instructions = (
             f"💳 <b>اطلاعات پرداخت کارت به کارت:</b>\n\n"
             f"{card_info}\n\n"
@@ -1776,10 +1796,28 @@ async def select_customer_payment_type(callback: CallbackQuery, state: FSMContex
             f"3️⃣ منتظر تأیید ادمین باشید (حداکثر ۲۴ ساعت)"
         )
     else:  # crypto
-        crypto_info = format_crypto_address(
-            selected_method['card_number'], 
-            selected_method['method_name']
-        )
+        # Handle new payment_details format
+        if selected_method.get('payment_details'):
+            try:
+                details = json.loads(selected_method['payment_details'])
+                wallets = details.get('wallets', [])
+                if wallets:
+                    # Use first wallet
+                    wallet = wallets[0]
+                    crypto_info = format_crypto_address(
+                        wallet.get('address', ''),
+                        wallet.get('currency', '')
+                    )
+                else:
+                    crypto_info = "❌ اطلاعات کیف‌پول موجود نیست"
+            except:
+                crypto_info = "❌ خطا در خواندن اطلاعات کیف‌پول"
+        else:
+            # Legacy fallback
+            crypto_info = format_crypto_address(
+                selected_method.get('card_number', ''),
+                selected_method.get('method_name', '')
+            )
         
         # Convert IRR to USD for crypto payments
         try:
