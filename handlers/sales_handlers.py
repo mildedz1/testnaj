@@ -4,6 +4,7 @@ Sales handlers for panel purchase system
 """
 import json
 import asyncio
+import aiosqlite
 from datetime import datetime
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
@@ -36,6 +37,7 @@ class SalesManagementStates(StatesGroup):
     waiting_for_card_holder = State()
     waiting_for_bank_name = State()
     waiting_for_product_edit_value = State()
+    waiting_for_payment_edit_value = State()
 
 # FSM States for customer purchase
 class PurchaseStates(StatesGroup):
@@ -586,6 +588,343 @@ async def add_payment_bank_name(message: Message, state: FSMContext):
         )
     
     await state.clear()
+
+# ============= PAYMENT METHOD EDITING =============
+
+@sales_router.callback_query(F.data == "edit_payment_method")
+async def edit_payment_method_select(callback: CallbackQuery):
+    """Show list of payment methods to select for editing."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    methods = await db.get_payment_methods(active_only=False)
+    
+    if not methods:
+        await callback.answer("هیچ روش پرداختی برای ویرایش وجود ندارد", show_alert=True)
+        return
+    
+    text = "💳 **انتخاب کارت برای ویرایش**\n\n"
+    text += "کدام کارت را می‌خواهید ویرایش کنید؟\n\n"
+    
+    keyboard_buttons = []
+    
+    for method in methods:
+        status = "✅" if method['is_active'] else "❌"
+        button_text = f"{status} {method['method_name']} ({method['card_number'][:4]}***)"
+        keyboard_buttons.append([
+            InlineKeyboardButton(
+                text=button_text, 
+                callback_data=f"edit_payment_{method['id']}"
+            )
+        ])
+    
+    keyboard_buttons.append([
+        InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="manage_payment_methods")
+    ])
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    
+    await callback.message.edit_text(text, reply_markup=keyboard)
+    await callback.answer()
+
+@sales_router.callback_query(F.data.startswith("edit_payment_"))
+async def edit_payment_method_details(callback: CallbackQuery):
+    """Show payment method editing options."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    payment_id = int(callback.data.replace("edit_payment_", ""))
+    method = await db.get_payment_method_by_id(payment_id)
+    
+    if not method:
+        await callback.answer("روش پرداخت یافت نشد", show_alert=True)
+        return
+    
+    status = "فعال" if method['is_active'] else "غیرفعال"
+    status_icon = "✅" if method['is_active'] else "❌"
+    
+    text = f"💳 **ویرایش کارت: {method['method_name']}**\n\n"
+    text += f"📋 **اطلاعات فعلی:**\n"
+    text += f"• نام: {method['method_name']}\n"
+    text += f"• شماره کارت: <code>{method['card_number']}</code>\n"
+    text += f"• نام صاحب کارت: {method['card_holder_name']}\n"
+    text += f"• بانک: {method['bank_name']}\n"
+    text += f"• وضعیت: {status_icon} {status}\n\n"
+    text += "کدام بخش را می‌خواهید ویرایش کنید؟"
+    
+    toggle_text = "غیرفعال کردن" if method['is_active'] else "فعال کردن"
+    toggle_callback = f"toggle_payment_{payment_id}"
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📝 نام روش پرداخت", callback_data=f"edit_payment_name_{payment_id}")],
+        [InlineKeyboardButton(text="💳 شماره کارت", callback_data=f"edit_payment_card_{payment_id}")],
+        [InlineKeyboardButton(text="👤 نام صاحب کارت", callback_data=f"edit_payment_holder_{payment_id}")],
+        [InlineKeyboardButton(text="🏦 نام بانک", callback_data=f"edit_payment_bank_{payment_id}")],
+        [InlineKeyboardButton(text=f"🔄 {toggle_text}", callback_data=toggle_callback)],
+        [InlineKeyboardButton(text="🗑 حذف کارت", callback_data=f"delete_payment_{payment_id}")],
+        [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="edit_payment_method")]
+    ])
+    
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode='HTML')
+    await callback.answer()
+
+@sales_router.callback_query(F.data.startswith("toggle_payment_"))
+async def toggle_payment_method(callback: CallbackQuery):
+    """Toggle payment method active/inactive status."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    payment_id = int(callback.data.replace("toggle_payment_", ""))
+    
+    try:
+        # Get current status
+        method = await db.get_payment_method_by_id(payment_id)
+        if not method:
+            await callback.answer("روش پرداخت یافت نشد", show_alert=True)
+            return
+        
+        # Toggle status
+        new_status = not method['is_active']
+        
+        async with aiosqlite.connect(db.db_path) as database:
+            await database.execute(
+                "UPDATE payment_methods SET is_active = ? WHERE id = ?",
+                (new_status, payment_id)
+            )
+            await database.commit()
+        
+        status_text = "فعال" if new_status else "غیرفعال"
+        await callback.answer(f"وضعیت کارت به '{status_text}' تغییر یافت", show_alert=True)
+        
+        # Refresh the edit page
+        await edit_payment_method_details(callback)
+        
+    except Exception as e:
+        await callback.answer(f"خطا در تغییر وضعیت: {str(e)}", show_alert=True)
+
+@sales_router.callback_query(F.data.startswith("delete_payment_"))
+async def delete_payment_method(callback: CallbackQuery):
+    """Delete a payment method."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    payment_id = int(callback.data.replace("delete_payment_", ""))
+    method = await db.get_payment_method_by_id(payment_id)
+    
+    if not method:
+        await callback.answer("روش پرداخت یافت نشد", show_alert=True)
+        return
+    
+    text = f"🗑 **حذف کارت**\n\n"
+    text += f"آیا مطمئن هستید که می‌خواهید کارت زیر را حذف کنید?\n\n"
+    text += f"📋 **اطلاعات کارت:**\n"
+    text += f"• نام: {method['method_name']}\n"
+    text += f"• شماره کارت: <code>{method['card_number']}</code>\n"
+    text += f"• صاحب کارت: {method['card_holder_name']}\n"
+    text += f"• بانک: {method['bank_name']}\n\n"
+    text += "⚠️ **هشدار:** این عمل غیرقابل بازگشت است!"
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ بله، حذف کن", callback_data=f"confirm_delete_payment_{payment_id}")],
+        [InlineKeyboardButton(text="❌ انصراف", callback_data=f"edit_payment_{payment_id}")]
+    ])
+    
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode='HTML')
+    await callback.answer()
+
+@sales_router.callback_query(F.data.startswith("confirm_delete_payment_"))
+async def confirm_delete_payment_method(callback: CallbackQuery):
+    """Confirm and delete payment method."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    payment_id = int(callback.data.replace("confirm_delete_payment_", ""))
+    
+    try:
+        async with aiosqlite.connect(db.db_path) as database:
+            await database.execute("DELETE FROM payment_methods WHERE id = ?", (payment_id,))
+            await database.commit()
+        
+        await callback.answer("کارت با موفقیت حذف شد", show_alert=True)
+        
+        # Go back to payment methods list
+        await edit_payment_method_select(callback)
+        
+    except Exception as e:
+        await callback.answer(f"خطا در حذف کارت: {str(e)}", show_alert=True)
+
+# Payment field editing handlers
+@sales_router.callback_query(F.data.startswith("edit_payment_name_"))
+async def edit_payment_name(callback: CallbackQuery, state: FSMContext):
+    """Start editing payment method name."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    payment_id = int(callback.data.replace("edit_payment_name_", ""))
+    method = await db.get_payment_method_by_id(payment_id)
+    
+    if not method:
+        await callback.answer("روش پرداخت یافت نشد", show_alert=True)
+        return
+    
+    await state.update_data(payment_id=payment_id, edit_field="method_name")
+    await state.set_state(SalesManagementStates.waiting_for_payment_edit_value)
+    
+    await callback.message.edit_text(
+        f"📝 **ویرایش نام روش پرداخت**\n\n"
+        f"نام فعلی: <code>{method['method_name']}</code>\n\n"
+        f"لطفاً نام جدید را وارد کنید:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data=f"edit_payment_{payment_id}")]
+        ]),
+        parse_mode='HTML'
+    )
+    await callback.answer()
+
+@sales_router.callback_query(F.data.startswith("edit_payment_card_"))
+async def edit_payment_card(callback: CallbackQuery, state: FSMContext):
+    """Start editing payment card number."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    payment_id = int(callback.data.replace("edit_payment_card_", ""))
+    method = await db.get_payment_method_by_id(payment_id)
+    
+    if not method:
+        await callback.answer("روش پرداخت یافت نشد", show_alert=True)
+        return
+    
+    await state.update_data(payment_id=payment_id, edit_field="card_number")
+    await state.set_state(SalesManagementStates.waiting_for_payment_edit_value)
+    
+    await callback.message.edit_text(
+        f"💳 **ویرایش شماره کارت**\n\n"
+        f"شماره فعلی: <code>{method['card_number']}</code>\n\n"
+        f"لطفاً شماره کارت جدید را وارد کنید:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data=f"edit_payment_{payment_id}")]
+        ]),
+        parse_mode='HTML'
+    )
+    await callback.answer()
+
+@sales_router.callback_query(F.data.startswith("edit_payment_holder_"))
+async def edit_payment_holder(callback: CallbackQuery, state: FSMContext):
+    """Start editing card holder name."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    payment_id = int(callback.data.replace("edit_payment_holder_", ""))
+    method = await db.get_payment_method_by_id(payment_id)
+    
+    if not method:
+        await callback.answer("روش پرداخت یافت نشد", show_alert=True)
+        return
+    
+    await state.update_data(payment_id=payment_id, edit_field="card_holder_name")
+    await state.set_state(SalesManagementStates.waiting_for_payment_edit_value)
+    
+    await callback.message.edit_text(
+        f"👤 **ویرایش نام صاحب کارت**\n\n"
+        f"نام فعلی: <code>{method['card_holder_name']}</code>\n\n"
+        f"لطفاً نام صاحب کارت جدید را وارد کنید:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data=f"edit_payment_{payment_id}")]
+        ]),
+        parse_mode='HTML'
+    )
+    await callback.answer()
+
+@sales_router.callback_query(F.data.startswith("edit_payment_bank_"))
+async def edit_payment_bank(callback: CallbackQuery, state: FSMContext):
+    """Start editing bank name."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    payment_id = int(callback.data.replace("edit_payment_bank_", ""))
+    method = await db.get_payment_method_by_id(payment_id)
+    
+    if not method:
+        await callback.answer("روش پرداخت یافت نشد", show_alert=True)
+        return
+    
+    await state.update_data(payment_id=payment_id, edit_field="bank_name")
+    await state.set_state(SalesManagementStates.waiting_for_payment_edit_value)
+    
+    await callback.message.edit_text(
+        f"🏦 **ویرایش نام بانک**\n\n"
+        f"نام فعلی: <code>{method['bank_name']}</code>\n\n"
+        f"لطفاً نام بانک جدید را وارد کنید:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data=f"edit_payment_{payment_id}")]
+        ]),
+        parse_mode='HTML'
+    )
+    await callback.answer()
+
+@sales_router.message(SalesManagementStates.waiting_for_payment_edit_value)
+async def process_payment_edit_value(message: Message, state: FSMContext):
+    """Process payment method field edit."""
+    if message.from_user.id not in config.SUDO_ADMINS:
+        await message.answer("غیرمجاز")
+        return
+    
+    data = await state.get_data()
+    payment_id = data.get('payment_id')
+    edit_field = data.get('edit_field')
+    new_value = message.text.strip()
+    
+    if not payment_id or not edit_field or not new_value:
+        await message.answer("خطا در دریافت اطلاعات. لطفاً دوباره تلاش کنید.")
+        await state.clear()
+        return
+    
+    try:
+        # Update the field in database
+        async with aiosqlite.connect(db.db_path) as database:
+            await database.execute(
+                f"UPDATE payment_methods SET {edit_field} = ? WHERE id = ?",
+                (new_value, payment_id)
+            )
+            await database.commit()
+        
+        field_names = {
+            'method_name': 'نام روش پرداخت',
+            'card_number': 'شماره کارت',
+            'card_holder_name': 'نام صاحب کارت',
+            'bank_name': 'نام بانک'
+        }
+        
+        field_display = field_names.get(edit_field, edit_field)
+        
+        await message.answer(
+            f"✅ {field_display} با موفقیت بروزرسانی شد.\n\n"
+            f"مقدار جدید: <code>{new_value}</code>",
+            parse_mode='HTML'
+        )
+        
+        await state.clear()
+        
+        # Show updated payment method details
+        from aiogram.types import CallbackQuery
+        fake_callback = CallbackQuery(
+            id="fake", from_user=message.from_user, chat_instance="fake",
+            data=f"edit_payment_{payment_id}", message=message
+        )
+        await edit_payment_method_details(fake_callback)
+        
+    except Exception as e:
+        await message.answer(f"خطا در بروزرسانی: {str(e)}")
+        await state.clear()
 
 # ============= PRODUCT EDITING =============
 

@@ -954,6 +954,18 @@ class Database:
             print(f"Error getting payment methods: {e}")
             return []
 
+    async def get_payment_method_by_id(self, payment_id: int):
+        """Get a payment method by ID."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute("SELECT * FROM payment_methods WHERE id = ?", (payment_id,)) as cursor:
+                    row = await cursor.fetchone()
+                    return dict(row) if row else None
+        except Exception as e:
+            print(f"Error getting payment method by ID {payment_id}: {e}")
+            return None
+
     async def create_sales_order(self, customer_user_id: int, customer_username: str,
                                 customer_first_name: str, customer_last_name: str,
                                 product_id: int, total_price: int, product_snapshot: str) -> int:
