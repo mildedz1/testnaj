@@ -1667,13 +1667,13 @@ async def select_product_for_purchase(callback: CallbackQuery, state: FSMContext
     text += "💳 **انتخاب روش پرداخت:**\n"
     text += "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     
-    # Group payment methods by type
+    # Group payment methods by type using payment_type field
     card_methods = []
     crypto_methods = []
     
     for method in payment_methods:
-        method_name_lower = method['method_name'].lower()
-        if any(crypto in method_name_lower for crypto in ['usdt', 'btc', 'eth', 'ترون', 'تتر', 'بیت', 'اتریوم', 'crypto', 'کریپتو']):
+        payment_type = method.get('payment_type', 'card')  # Default to card for legacy data
+        if payment_type == 'crypto':
             crypto_methods.append(method)
         else:
             card_methods.append(method)
@@ -1720,13 +1720,11 @@ async def select_customer_payment_type(callback: CallbackQuery, state: FSMContex
     payment_methods = await db.get_payment_methods(active_only=True)
     
     if payment_type == "card":
-        methods = [m for m in payment_methods if not any(crypto in m['method_name'].lower() 
-                  for crypto in ['usdt', 'btc', 'eth', 'ترون', 'تتر', 'بیت', 'اتریوم', 'crypto', 'کریپتو'])]
+        methods = [m for m in payment_methods if m.get('payment_type', 'card') == 'card']
         type_name = "کارت به کارت"
         type_emoji = "💳"
     else:  # crypto
-        methods = [m for m in payment_methods if any(crypto in m['method_name'].lower() 
-                  for crypto in ['usdt', 'btc', 'eth', 'ترون', 'تتر', 'بیت', 'اتریوم', 'crypto', 'کریپتو'])]
+        methods = [m for m in payment_methods if m.get('payment_type', 'card') == 'crypto']
         type_name = "ارز دیجیتال"
         type_emoji = "🪙"
     
