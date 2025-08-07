@@ -93,7 +93,7 @@ class MarzbanAdminBot:
         logger.info("=== GENERAL HANDLERS (AFTER FSM ROUTERS) ===")
         # Add global handlers AFTER state-specific routers
         logger.info("Registering start command handler...")
-        self.dp.message.register(self.unauthorized_handler, Command("start"))
+        self.dp.message.register(self.start_handler, Command("start"))
         logger.info("✅ Start command handler registered")
         
         # Register help handler with proper filters to avoid FSM interference
@@ -169,6 +169,55 @@ class MarzbanAdminBot:
             await message.answer(help_text, reply_markup=get_admin_keyboard())
         
         logger.info(f"Help message sent to user {user_id}")
+
+    async def start_handler(self, message: Message, state: FSMContext = None):
+        """Universal handler for /start command - works for all user types."""
+        user_id = message.from_user.id
+        
+        # Log handler activation with state information
+        current_state = await state.get_state() if state else None
+        logger.info(f"Start handler activated for user {user_id}, current state: {current_state}")
+        
+        # Clear any active FSM state
+        if state and current_state:
+            await state.clear()
+            logger.info(f"Cleared FSM state {current_state} for user {user_id}")
+        
+        # Check if user is sudo admin
+        if user_id in config.SUDO_ADMINS:
+            from handlers.sudo_handlers import get_sudo_keyboard
+            await message.answer(
+                "🔐 **منوی مدیریت سودو ادمین**\n\n"
+                "شما دسترسی کامل به تمام بخش‌های ربات دارید:",
+                reply_markup=get_sudo_keyboard()
+            )
+            logger.info(f"Sudo admin {user_id} welcomed with admin panel")
+            return
+        
+        # Check if user is authorized admin
+        if await db.is_admin_authorized(user_id):
+            from handlers.admin_handlers import get_admin_keyboard
+            await message.answer(
+                f"👋 خوش آمدید!\n\n{config.MESSAGES['welcome_admin']}",
+                reply_markup=get_admin_keyboard()
+            )
+            logger.info(f"Authorized admin {user_id} welcomed with admin panel")
+            return
+        
+        # Unauthorized user - show sales panel
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🛒 خرید پنل", callback_data="buy_panel")]
+        ])
+        
+        await message.answer(
+            f"{config.MESSAGES['unauthorized']}\n\n"
+            f"🛒 **می‌توانید پنل جدید خریداری کنید:**\n"
+            f"با کلیک بر روی دکمه زیر، محصولات موجود را مشاهده کنید.",
+            reply_markup=keyboard
+        )
+        logger.info(f"Unauthorized user {user_id} shown sales panel")
 
     async def unauthorized_handler(self, message: Message, state: FSMContext = None):
         """Handler for unauthorized users."""
