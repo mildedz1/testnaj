@@ -5,8 +5,12 @@ Currency conversion utilities
 import httpx
 import asyncio
 import logging
+import os
 
 logger = logging.getLogger(__name__)
+
+# Manual exchange rate (can be set via environment variable)
+MANUAL_USD_IRR_RATE = float(os.getenv("USD_IRR_RATE", "75000"))
 
 async def get_usd_to_irr_rate() -> float:
     """
@@ -16,33 +20,48 @@ async def get_usd_to_irr_rate() -> float:
     Returns:
         float: USD to IRR rate
     """
-    fallback_rate = 42000.0  # Fallback rate if API fails
+    fallback_rate = 75000.0  # Updated fallback rate (more realistic)
     
     apis_to_try = [
-        # Free APIs for USD to IRR
+        # Direct API for Iranian exchange rates
         {
-            "url": "https://api.exchangerate-api.com/v4/latest/USD",
-            "parser": lambda data: data.get("rates", {}).get("IRR", fallback_rate)
+            "url": "https://api.navasan.tech/latest/?api_key=free",
+            "parser": lambda data: float(data.get("usd", {}).get("value", fallback_rate)) if isinstance(data, dict) and data.get("usd") else fallback_rate
         },
         {
-            "url": "https://api.fixer.io/latest?base=USD&symbols=IRR",
-            "parser": lambda data: data.get("rates", {}).get("IRR", fallback_rate)
+            "url": "https://api.currencyapi.com/v3/latest?apikey=cur_live_bFJ93gF5X2HLQrFWlq36iaDLi9F6rFb2jYzCMtSu&currencies=IRR&base_currency=USD",
+            "parser": lambda data: float(data.get("data", {}).get("IRR", {}).get("value", fallback_rate)) if isinstance(data, dict) else fallback_rate
         },
+        # Try with Iranian market rate multiplier
         {
-            "url": "https://open.er-api.com/v6/latest/USD",
-            "parser": lambda data: data.get("rates", {}).get("IRR", fallback_rate)
+            "url": "https://api.exchangerate-api.com/v4/latest/USD", 
+            "parser": lambda data: float(data.get("rates", {}).get("IRR", 0)) * 1.7 if data.get("rates", {}).get("IRR") and float(data.get("rates", {}).get("IRR", 0)) > 0 else fallback_rate
+        },
+        # Manual rate as last resort
+        {
+            "url": "manual",
+            "parser": lambda data: MANUAL_USD_IRR_RATE  # Can be set via USD_IRR_RATE environment variable
         }
     ]
     
     for api in apis_to_try:
         try:
+            # Handle manual rate
+            if api["url"] == "manual":
+                rate = api["parser"](None)
+                if rate and rate > 0:
+                    logger.info(f"Using manual USD to IRR rate: {rate}")
+                    return float(rate)
+                continue
+            
+            # Handle API calls
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(api["url"])
                 if response.status_code == 200:
                     data = response.json()
                     rate = api["parser"](data)
                     if rate and rate > 0:
-                        logger.info(f"Got USD to IRR rate: {rate}")
+                        logger.info(f"Got USD to IRR rate from {api['url']}: {rate}")
                         return float(rate)
         except Exception as e:
             logger.warning(f"Failed to get rate from {api['url']}: {e}")
