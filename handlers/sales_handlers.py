@@ -1685,7 +1685,7 @@ async def select_product_for_purchase(callback: CallbackQuery, state: FSMContext
         buttons.append([
             InlineKeyboardButton(
                 text="💳 پرداخت کارت به کارت",
-                callback_data="payment_type_card"
+                callback_data="customer_payment_type_card"
             )
         ])
     
@@ -1693,7 +1693,7 @@ async def select_product_for_purchase(callback: CallbackQuery, state: FSMContext
         buttons.append([
             InlineKeyboardButton(
                 text="🪙 پرداخت با ارز دیجیتال",
-                callback_data="payment_type_crypto"
+                callback_data="customer_payment_type_crypto"
             )
         ])
     
@@ -1703,10 +1703,10 @@ async def select_product_for_purchase(callback: CallbackQuery, state: FSMContext
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
-@sales_router.callback_query(F.data.startswith("payment_type_"))
-async def select_payment_type(callback: CallbackQuery, state: FSMContext):
-    """Handle payment type selection (card vs crypto)."""
-    payment_type = callback.data.split("_")[2]  # card or crypto
+@sales_router.callback_query(F.data.startswith("customer_payment_type_"))
+async def select_customer_payment_type(callback: CallbackQuery, state: FSMContext):
+    """Handle customer payment type selection (card vs crypto)."""
+    payment_type = callback.data.split("_")[3]  # card or crypto
     
     # Get product from state
     data = await state.get_data()
