@@ -615,7 +615,7 @@ async def edit_payment_method_select(callback: CallbackQuery):
         keyboard_buttons.append([
             InlineKeyboardButton(
                 text=button_text, 
-                callback_data=f"edit_payment_{method['id']}"
+                callback_data=f"edit_payment_details_{method['id']}"
             )
         ])
     
@@ -628,14 +628,14 @@ async def edit_payment_method_select(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
-@sales_router.callback_query(F.data.startswith("edit_payment_"))
+@sales_router.callback_query(F.data.startswith("edit_payment_details_"))
 async def edit_payment_method_details(callback: CallbackQuery):
     """Show payment method editing options."""
     if callback.from_user.id not in config.SUDO_ADMINS:
         await callback.answer("غیرمجاز", show_alert=True)
         return
     
-    payment_id = int(callback.data.replace("edit_payment_", ""))
+    payment_id = int(callback.data.replace("edit_payment_details_", ""))
     method = await db.get_payment_method_by_id(payment_id)
     
     if not method:
@@ -730,7 +730,7 @@ async def delete_payment_method(callback: CallbackQuery):
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ بله، حذف کن", callback_data=f"confirm_delete_payment_{payment_id}")],
-        [InlineKeyboardButton(text="❌ انصراف", callback_data=f"edit_payment_{payment_id}")]
+        [InlineKeyboardButton(text="❌ انصراف", callback_data=f"edit_payment_details_{payment_id}")]
     ])
     
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode='HTML')
@@ -781,7 +781,7 @@ async def edit_payment_name(callback: CallbackQuery, state: FSMContext):
         f"نام فعلی: <code>{method['method_name']}</code>\n\n"
         f"لطفاً نام جدید را وارد کنید:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data=f"edit_payment_{payment_id}")]
+            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data=f"edit_payment_details_{payment_id}")]
         ]),
         parse_mode='HTML'
     )
@@ -809,7 +809,7 @@ async def edit_payment_card(callback: CallbackQuery, state: FSMContext):
         f"شماره فعلی: <code>{method['card_number']}</code>\n\n"
         f"لطفاً شماره کارت جدید را وارد کنید:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data=f"edit_payment_{payment_id}")]
+            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data=f"edit_payment_details_{payment_id}")]
         ]),
         parse_mode='HTML'
     )
@@ -837,7 +837,7 @@ async def edit_payment_holder(callback: CallbackQuery, state: FSMContext):
         f"نام فعلی: <code>{method['card_holder_name']}</code>\n\n"
         f"لطفاً نام صاحب کارت جدید را وارد کنید:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data=f"edit_payment_{payment_id}")]
+            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data=f"edit_payment_details_{payment_id}")]
         ]),
         parse_mode='HTML'
     )
@@ -865,7 +865,7 @@ async def edit_payment_bank(callback: CallbackQuery, state: FSMContext):
         f"نام فعلی: <code>{method['bank_name']}</code>\n\n"
         f"لطفاً نام بانک جدید را وارد کنید:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data=f"edit_payment_{payment_id}")]
+            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data=f"edit_payment_details_{payment_id}")]
         ]),
         parse_mode='HTML'
     )
@@ -918,7 +918,7 @@ async def process_payment_edit_value(message: Message, state: FSMContext):
         from aiogram.types import CallbackQuery
         fake_callback = CallbackQuery(
             id="fake", from_user=message.from_user, chat_instance="fake",
-            data=f"edit_payment_{payment_id}", message=message
+            data=f"edit_payment_details_{payment_id}", message=message
         )
         await edit_payment_method_details(fake_callback)
         
