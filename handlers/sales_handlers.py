@@ -1320,7 +1320,23 @@ async def approve_order_and_create_panel(callback: CallbackQuery):
             updated_at=datetime.now()
         )
         
-        # Add admin to database
+        # First create admin in Marzban panel
+        from marzban_api import marzban_api
+        marzban_success = await marzban_api.create_admin(
+            username=marzban_username,
+            password=marzban_password,
+            telegram_id=order['customer_user_id'],
+            is_sudo=False
+        )
+        
+        if not marzban_success:
+            logger.error(f"Failed to create admin {marzban_username} in Marzban panel")
+            await callback.answer("خطا در ایجاد پنل در سرور مرزبان.", show_alert=True)
+            return
+        
+        logger.info(f"Admin {marzban_username} created successfully in Marzban panel")
+        
+        # Add admin to bot database
         admin_id = await db.add_admin(admin)
         
         if admin_id > 0:
@@ -1334,7 +1350,8 @@ async def approve_order_and_create_panel(callback: CallbackQuery):
                     text=f"🎉 **سفارش شما تأیید شد!**\n\n"
                          f"🆔 **شماره سفارش:** {order_id}\n"
                          f"📦 **محصول:** {order['product_name']}\n\n"
-                         f"🔐 **اطلاعات ورود به پنل:**\n"
+                         f"🔐 **اطلاعات ورود به پنل مرزبان:**\n"
+                         f"🌐 **آدرس پنل:** `{config.MARZBAN_URL}`\n"
                          f"👤 **نام کاربری:** `{marzban_username}`\n"
                          f"🔑 **رمز عبور:** `{marzban_password}`\n\n"
                          f"📋 **مشخصات پنل:**\n"
@@ -1342,8 +1359,8 @@ async def approve_order_and_create_panel(callback: CallbackQuery):
                          f"📊 حداکثر ترافیک: {order['max_traffic'] // (1024**3)}GB\n"
                          f"⏱️ حداکثر زمان: {order['max_time'] // (24*3600)} روز\n"
                          f"📅 اعتبار: {order['validity_days']} روز\n\n"
-                         f"✨ پنل شما فعال است و می‌توانید از آن استفاده کنید.\n"
-                         f"🎯 برای استفاده از ربات، دستور /start را ارسال کنید.",
+                         f"✨ پنل شما در سرور مرزبان ایجاد شد و فعال است.\n"
+                         f"🎯 برای مدیریت پنل از ربات، دستور /start را ارسال کنید.",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="🏠 شروع استفاده", callback_data="start")]
                     ])
