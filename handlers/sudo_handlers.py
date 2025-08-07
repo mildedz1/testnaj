@@ -622,46 +622,31 @@ async def process_traffic_volume(message: Message, state: FSMContext):
                 "📋 **مثال:** `50` یا `100.5` یا `نامحدود`"
             )
             return
-        
-        # Save traffic to state data
-        await state.update_data(traffic_gb=traffic_gb, traffic_bytes=traffic_bytes)
-        
-        logger.info(f"User {user_id} entered traffic volume: {traffic_gb} GB ({traffic_bytes} bytes)")
-        
-        # Move to next step
-        traffic_display = "نامحدود" if traffic_gb == -1 else f"{traffic_gb} گیگابایت"
-        await message.answer(
-            f"✅ **حجم ترافیک دریافت شد:** {traffic_display}\n\n"
-            "📝 **مرحله ۶ از ۷: تعداد کاربر مجاز**\n\n"
-            "لطفاً حداکثر تعداد کاربری که این ادمین می‌تواند ایجاد کند را وارد کنید:\n\n"
-            "📋 **مثال‌ها:**\n"
-            "• `10` برای ۱۰ کاربر\n"
-            "• `50` برای ۵۰ کاربر\n"
-            "• `100` برای ۱۰۰ کاربر\n\n"
-            "💡 **نکته:** عدد صحیح وارد کنید"
-        )
-        
-        # Change state to waiting for max users
-        await state.set_state(AddAdminStates.waiting_for_max_users)
-        
-        # Log state change
-        current_state = await state.get_state()
-        logger.info(f"User {user_id} state changed to: {current_state}")
-        
-    except ValueError:
-        logger.warning(f"User {user_id} entered invalid traffic volume: {message.text}")
-        await message.answer(
-            "❌ **فرمت حجم ترافیک اشتباه است!**\n\n"
-            "🔢 لطفاً یک عدد صحیح یا اعشاری وارد کنید.\n"
-            "📋 **مثال:** `100` یا `50.5`"
-        )
-    except Exception as e:
-        logger.error(f"Error processing traffic volume from {user_id}: {e}")
-        await message.answer(
-            "❌ **خطا در پردازش حجم ترافیک**\n\n"
-            "لطفاً مجدداً تلاش کنید یا /start را بزنید."
-        )
-        await state.clear()
+    
+    # Save traffic to state data
+    await state.update_data(traffic_gb=traffic_gb, traffic_bytes=traffic_bytes)
+    
+    logger.info(f"User {user_id} entered traffic volume: {traffic_gb} GB ({traffic_bytes} bytes)")
+    
+    # Move to next step
+    traffic_display = "نامحدود" if traffic_gb == -1 else f"{traffic_gb} گیگابایت"
+    await message.answer(
+        f"✅ **حجم ترافیک دریافت شد:** {traffic_display}\n\n"
+        "📝 **مرحله ۶ از ۷: تعداد کاربر مجاز**\n\n"
+        "لطفاً حداکثر تعداد کاربری که این ادمین می‌تواند ایجاد کند را وارد کنید:\n\n"
+        "📋 **مثال‌ها:**\n"
+        "• `10` برای ۱۰ کاربر\n"
+        "• `50` برای ۵۰ کاربر\n"
+        "• `100` برای ۱۰۰ کاربر\n\n"
+        "💡 **نکته:** عدد صحیح وارد کنید"
+    )
+    
+    # Change state to waiting for max users
+    await state.set_state(AddAdminStates.waiting_for_max_users)
+    
+    # Log state change
+    current_state = await state.get_state()
+    logger.info(f"User {user_id} state changed to: {current_state}")
 
 
 @sudo_router.message(AddAdminStates.waiting_for_max_users, F.text)
