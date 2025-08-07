@@ -899,9 +899,15 @@ async def select_product_for_purchase(callback: CallbackQuery, state: FSMContext
     text = f"🛒 **خرید {product['name']}**\n\n"
     text += f"💰 **قیمت:** {product['price']:,} {product['currency']}\n"
     text += f"📦 **مشخصات:**\n"
-    text += f"   👥 کاربران: {product['max_users']}\n"
-    text += f"   📊 ترافیک: {product['max_traffic'] // (1024**3)} گیگابایت\n"
-    text += f"   ⏱️ زمان: {product['max_time'] // (24*3600)} روز\n\n"
+    
+    # Use utility functions for proper display
+    users_display = convert_unlimited_for_display(product['max_users'])
+    if users_display != "نامحدود":
+        users_display += " نفر"
+    
+    text += f"   👥 کاربران: {users_display}\n"
+    text += f"   📊 ترافیک: {format_traffic_display(product['max_traffic'])}\n"
+    text += f"   ⏱️ زمان: {format_time_display(product['max_time'])}\n\n"
     
     if product['description']:
         text += f"📝 **توضیحات:** {product['description']}\n\n"
@@ -922,15 +928,8 @@ async def select_product_for_purchase(callback: CallbackQuery, state: FSMContext
     
     buttons = []
     
-    # Show card-to-card option if available
+    # Show payment type options without details
     if card_methods:
-        text += "💳 **کارت به کارت:**\n"
-        for method in card_methods:
-            text += f"┃ 🏦 {method['bank_name']}\n"
-            text += f"┃ 💳 {method['card_number']}\n"
-            text += f"┃ 👤 {method['card_holder_name']}\n"
-        text += "\n"
-        
         buttons.append([
             InlineKeyboardButton(
                 text="💳 پرداخت کارت به کارت",
@@ -938,15 +937,7 @@ async def select_product_for_purchase(callback: CallbackQuery, state: FSMContext
             )
         ])
     
-    # Show crypto option if available
     if crypto_methods:
-        text += "🪙 **ارزهای دیجیتال:**\n"
-        for method in crypto_methods:
-            text += f"┃ 🪙 {method['method_name']}\n"
-            if method['card_number']:  # Use as wallet address
-                text += f"┃ 📍 {method['card_number']}\n"
-        text += "\n"
-        
         buttons.append([
             InlineKeyboardButton(
                 text="🪙 پرداخت با ارز دیجیتال",
@@ -1257,10 +1248,20 @@ async def review_order_details(callback: CallbackQuery):
     text += f"📦 **محصول:** {order['product_name']}\n"
     text += f"💰 **مبلغ:** {order['total_price']:,} تومان\n\n"
     text += f"📋 **مشخصات پنل:**\n"
-    text += f"   👥 کاربران: {order['max_users']}\n"
-    text += f"   📊 ترافیک: {order['max_traffic'] // (1024**3)}GB\n"
-    text += f"   ⏱️ زمان: {order['max_time'] // (24*3600)} روز\n"
-    text += f"   📅 اعتبار: {order['validity_days']} روز\n\n"
+    
+    # Use utility functions for proper display
+    users_display = convert_unlimited_for_display(order['max_users'])
+    if users_display != "نامحدود":
+        users_display += " نفر"
+    
+    validity_display = convert_unlimited_for_display(order['validity_days'])
+    if validity_display != "نامحدود":
+        validity_display += " روز"
+    
+    text += f"   👥 کاربران: {users_display}\n"
+    text += f"   📊 ترافیک: {format_traffic_display(order['max_traffic'])}\n"
+    text += f"   ⏱️ زمان: {format_time_display(order['max_time'])}\n"
+    text += f"   📅 اعتبار: {validity_display}\n\n"
     text += f"📅 **تاریخ سفارش:** {order['created_at']}\n"
     text += f"📷 **رسید پرداخت:** ارسال شده"
     
@@ -1394,14 +1395,14 @@ async def approve_order_and_create_panel(callback: CallbackQuery):
                          f"🆔 **شماره سفارش:** {order_id}\n"
                          f"📦 **محصول:** {order['product_name']}\n\n"
                          f"🔐 **اطلاعات ورود به پنل مرزبان:**\n"
-                         f"🌐 **آدرس پنل:** `{config.MARZBAN_URL}`\n"
+                         f"🌐 **آدرس پنل:** `{config.MARZBAN_URL}/dashboard`\n"
                          f"👤 **نام کاربری:** `{marzban_username}`\n"
                          f"🔑 **رمز عبور:** `{marzban_password}`\n\n"
                          f"📋 **مشخصات پنل:**\n"
-                         f"👥 حداکثر کاربران: {order['max_users']}\n"
-                         f"📊 حداکثر ترافیک: {order['max_traffic'] // (1024**3)}GB\n"
-                         f"⏱️ حداکثر زمان: {order['max_time'] // (24*3600)} روز\n"
-                         f"📅 اعتبار: {order['validity_days']} روز\n\n"
+                         f"👥 حداکثر کاربران: {convert_unlimited_for_display(order['max_users'])}\n"
+                         f"📊 حداکثر ترافیک: {format_traffic_display(order['max_traffic'])}\n"
+                         f"⏱️ حداکثر زمان: {format_time_display(order['max_time'])}\n"
+                         f"📅 اعتبار: {convert_unlimited_for_display(order['validity_days'])} {'روز' if order['validity_days'] != -1 else ''}\n\n"
                          f"✨ پنل شما در سرور مرزبان ایجاد شد و فعال است.\n"
                          f"🎯 برای مدیریت پنل از ربات، دستور /start را ارسال کنید.",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
