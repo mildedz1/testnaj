@@ -585,28 +585,43 @@ async def process_traffic_volume(message: Message, state: FSMContext):
         await state.clear()
         return
     
-    try:
-        traffic_gb = float(message.text.strip())
-        
-        # Validate traffic volume
-        if traffic_gb <= 0:
+    traffic_input = message.text.strip().lower()
+    
+    # Check for unlimited input
+    if traffic_input in ['نامحدود', 'unlimited', '-1', '0']:
+        traffic_gb = -1  # -1 indicates unlimited
+        traffic_bytes = -1
+    else:
+        try:
+            traffic_gb = float(traffic_input)
+            
+            # Validate traffic volume
+            if traffic_gb <= 0:
+                await message.answer(
+                    "❌ **حجم ترافیک نامعتبر!**\n\n"
+                    "حجم ترافیک باید عددی مثبت باشد یا 'نامحدود' بنویسید.\n\n"
+                    "💡 لطفاً عدد صحیحی وارد کنید یا 'نامحدود' بنویسید:"
+                )
+                return
+            
+            if traffic_gb > 10000:  # More than 10TB seems unrealistic
+                await message.answer(
+                    "⚠️ **حجم ترافیک خیلی زیاد است!**\n\n"
+                    f"آیا واقعاً می‌خواهید {traffic_gb} گیگابایت تخصیص دهید؟\n\n"
+                    "🤔 برای تایید همین مقدار را مجدد ارسال کنید، یا مقدار کمتری وارد کنید."
+                )
+                return
+            
+            # Convert GB to bytes
+            traffic_bytes = gb_to_bytes(traffic_gb)
+        except ValueError:
+            logger.warning(f"User {user_id} entered invalid traffic volume: {message.text}")
             await message.answer(
-                "❌ **حجم ترافیک نامعتبر!**\n\n"
-                "حجم ترافیک باید عددی مثبت باشد.\n\n"
-                "💡 لطفاً عدد صحیحی وارد کنید:"
+                "❌ **فرمت حجم ترافیک اشتباه است!**\n\n"
+                "🔢 لطفاً یک عدد معتبر وارد کنید یا 'نامحدود' بنویسید.\n"
+                "📋 **مثال:** `50` یا `100.5` یا `نامحدود`"
             )
             return
-        
-        if traffic_gb > 10000:  # More than 10TB seems unrealistic
-            await message.answer(
-                "⚠️ **حجم ترافیک خیلی زیاد است!**\n\n"
-                f"آیا واقعاً می‌خواهید {traffic_gb} گیگابایت تخصیص دهید؟\n\n"
-                "🤔 برای تایید همین مقدار را مجدد ارسال کنید، یا مقدار کمتری وارد کنید."
-            )
-            return
-        
-        # Convert GB to bytes
-        traffic_bytes = gb_to_bytes(traffic_gb)
         
         # Save traffic to state data
         await state.update_data(traffic_gb=traffic_gb, traffic_bytes=traffic_bytes)
@@ -614,8 +629,9 @@ async def process_traffic_volume(message: Message, state: FSMContext):
         logger.info(f"User {user_id} entered traffic volume: {traffic_gb} GB ({traffic_bytes} bytes)")
         
         # Move to next step
+        traffic_display = "نامحدود" if traffic_gb == -1 else f"{traffic_gb} گیگابایت"
         await message.answer(
-            f"✅ **حجم ترافیک دریافت شد:** {traffic_gb} گیگابایت\n\n"
+            f"✅ **حجم ترافیک دریافت شد:** {traffic_display}\n\n"
             "📝 **مرحله ۶ از ۷: تعداد کاربر مجاز**\n\n"
             "لطفاً حداکثر تعداد کاربری که این ادمین می‌تواند ایجاد کند را وارد کنید:\n\n"
             "📋 **مثال‌ها:**\n"
@@ -662,56 +678,65 @@ async def process_max_users(message: Message, state: FSMContext):
         await state.clear()
         return
     
-    try:
-        max_users = int(message.text.strip())
-        
-        # Validate max users
-        if max_users <= 0:
+    user_input = message.text.strip().lower()
+    
+    # Check for unlimited input
+    if user_input in ['نامحدود', 'unlimited', '-1', '0']:
+        max_users = -1  # -1 indicates unlimited
+    else:
+        try:
+            max_users = int(user_input)
+            
+            # Validate max users
+            if max_users <= 0:
+                await message.answer(
+                    "❌ **تعداد کاربر نامعتبر!**\n\n"
+                    "تعداد کاربر باید عددی مثبت باشد یا 'نامحدود' بنویسید.\n\n"
+                    "💡 لطفاً عدد صحیحی وارد کنید یا 'نامحدود' بنویسید:"
+                )
+                return
+            
+            if max_users > 10000:  # More than 10k users seems unrealistic for one admin
+                await message.answer(
+                    "⚠️ **تعداد کاربر خیلی زیاد است!**\n\n"
+                    f"آیا واقعاً می‌خواهید {max_users} کاربر تخصیص دهید؟\n\n"
+                    "🤔 برای تایید همین مقدار را مجدد ارسال کنید، یا عدد کمتری وارد کنید."
+                )
+                return
+        except ValueError:
+            logger.warning(f"User {user_id} entered invalid max users: {message.text}")
             await message.answer(
-                "❌ **تعداد کاربر نامعتبر!**\n\n"
-                "تعداد کاربر باید عددی مثبت باشد.\n\n"
-                "💡 لطفاً عدد صحیحی وارد کنید:"
+                "❌ **فرمت تعداد کاربر اشتباه است!**\n\n"
+                "🔢 لطفاً یک عدد صحیح وارد کنید یا 'نامحدود' بنویسید.\n"
+                "📋 **مثال:** `10` یا `50` یا `نامحدود`"
             )
             return
-        
-        if max_users > 10000:  # More than 10k users seems unrealistic for one admin
-            await message.answer(
-                "⚠️ **تعداد کاربر خیلی زیاد است!**\n\n"
-                f"آیا واقعاً می‌خواهید {max_users} کاربر تخصیص دهید؟\n\n"
-                "🤔 برای تایید همین مقدار را مجدد ارسال کنید، یا عدد کمتری وارد کنید."
-            )
-            return
-        
-        # Save max users to state data
-        await state.update_data(max_users=max_users)
-        
-        logger.info(f"User {user_id} entered max users: {max_users}")
-        
-        # Move to next step
-        await message.answer(
-            f"✅ **تعداد کاربر مجاز دریافت شد:** {max_users} کاربر\n\n"
-            "📝 **مرحله ۷ از ۷: مدت اعتبار**\n\n"
-            "لطفاً مدت اعتبار این ادمین را به روز وارد کنید:\n\n"
-            "📋 **مثال‌ها:**\n"
-            "• `30` برای ۳۰ روز (یک ماه)\n"
-            "• `90` برای ۹۰ روز (سه ماه)\n"
-            "• `365` برای ۳۶۵ روز (یک سال)\n\n"
-            "💡 **نکته:** پس از انقضا، ادمین غیرفعال می‌شود"
-        )
-        
-        # Change state to waiting for validity period
-        await state.set_state(AddAdminStates.waiting_for_validity_period)
-        
-        # Log state change
-        current_state = await state.get_state()
-        logger.info(f"User {user_id} state changed to: {current_state}")
-        
-    except ValueError:
-        logger.warning(f"User {user_id} entered invalid max users: {message.text}")
-        await message.answer(
-            "❌ **فرمت تعداد کاربر اشتباه است!**\n\n"
-            "🔢 لطفاً یک عدد صحیح وارد کنید.\n"
-            "📋 **مثال:** `10` یا `50`"
+    
+    # Save max users to state data
+    await state.update_data(max_users=max_users)
+    
+    logger.info(f"User {user_id} entered max users: {max_users}")
+    
+    # Move to next step
+    users_display = "نامحدود" if max_users == -1 else f"{max_users} کاربر"
+    await message.answer(
+        f"✅ **تعداد کاربر مجاز دریافت شد:** {users_display}\n\n"
+        "📝 **مرحله ۷ از ۷: مدت اعتبار**\n\n"
+        "لطفاً مدت اعتبار این ادمین را به روز وارد کنید:\n\n"
+        "📋 **مثال‌ها:**\n"
+        "• `30` برای ۳۰ روز (یک ماه)\n"
+        "• `90` برای ۹۰ روز (سه ماه)\n"
+        "• `365` برای ۳۶۵ روز (یک سال)\n"
+        "• `نامحدود` برای بدون انقضا\n\n"
+        "💡 **نکته:** پس از انقضا، ادمین غیرفعال می‌شود"
+    )
+    
+    # Change state to waiting for validity period
+    await state.set_state(AddAdminStates.waiting_for_validity_period)
+    
+    # Log state change
+    current_state = await state.get_state()
+    logger.info(f"User {user_id} state changed to: {current_state}")
         )
     except Exception as e:
         logger.error(f"Error processing max users from {user_id}: {e}")
@@ -736,28 +761,43 @@ async def process_validity_period(message: Message, state: FSMContext):
         await state.clear()
         return
     
-    try:
-        validity_days = int(message.text.strip())
-        
-        # Validate validity period
-        if validity_days <= 0:
+    validity_input = message.text.strip().lower()
+    
+    # Check for unlimited input
+    if validity_input in ['نامحدود', 'unlimited', '-1', '0']:
+        validity_days = -1  # -1 indicates unlimited
+        validity_seconds = -1
+    else:
+        try:
+            validity_days = int(validity_input)
+            
+            # Validate validity period
+            if validity_days <= 0:
+                await message.answer(
+                    "❌ **مدت اعتبار نامعتبر!**\n\n"
+                    "مدت اعتبار باید عددی مثبت باشد یا 'نامحدود' بنویسید.\n\n"
+                    "💡 لطفاً تعداد روز را وارد کنید یا 'نامحدود' بنویسید:"
+                )
+                return
+            
+            if validity_days > 3650:  # More than 10 years seems unrealistic
+                await message.answer(
+                    "⚠️ **مدت اعتبار خیلی طولانی است!**\n\n"
+                    f"آیا واقعاً می‌خواهید {validity_days} روز ({validity_days//365} سال) تخصیص دهید؟\n\n"
+                    "🤔 برای تایید همین مقدار را مجدد ارسال کنید، یا عدد کمتری وارد کنید."
+                )
+                return
+            
+            # Convert days to seconds
+            validity_seconds = days_to_seconds(validity_days)
+        except ValueError:
+            logger.warning(f"User {user_id} entered invalid validity period: {message.text}")
             await message.answer(
-                "❌ **مدت اعتبار نامعتبر!**\n\n"
-                "مدت اعتبار باید عددی مثبت باشد.\n\n"
-                "💡 لطفاً تعداد روز را وارد کنید:"
+                "❌ **فرمت مدت اعتبار اشتباه است!**\n\n"
+                "🔢 لطفاً یک عدد صحیح وارد کنید یا 'نامحدود' بنویسید.\n"
+                "📋 **مثال:** `30` یا `365` یا `نامحدود`"
             )
             return
-        
-        if validity_days > 3650:  # More than 10 years seems unrealistic
-            await message.answer(
-                "⚠️ **مدت اعتبار خیلی طولانی است!**\n\n"
-                f"آیا واقعاً می‌خواهید {validity_days} روز ({validity_days//365} سال) تخصیص دهید؟\n\n"
-                "🤔 برای تایید همین مقدار را مجدد ارسال کنید، یا عدد کمتری وارد کنید."
-            )
-            return
-        
-        # Convert days to seconds
-        validity_seconds = days_to_seconds(validity_days)
         
         # Save validity period to state data
         await state.update_data(validity_days=validity_days, validity_seconds=validity_seconds)
@@ -773,14 +813,18 @@ async def process_validity_period(message: Message, state: FSMContext):
         max_users = data.get("max_users")
         
         # Show confirmation with summary
+        traffic_display = "نامحدود" if traffic_gb == -1 else f"{traffic_gb} گیگابایت"
+        users_display = "نامحدود" if max_users == -1 else f"{max_users} کاربر"
+        validity_display = "نامحدود" if validity_days == -1 else f"{validity_days} روز"
+        
         confirmation_text = (
             "📋 **خلاصه اطلاعات ادمین جدید**\n\n"
             f"👤 **User ID:** `{admin_user_id}`\n"
             f"📝 **نام ادمین:** {admin_name}\n"
             f"🔐 **Username مرزبان:** {marzban_username}\n"
-            f"📊 **حجم ترافیک:** {traffic_gb} گیگابایت\n"
-            f"👥 **تعداد کاربر مجاز:** {max_users} کاربر\n"
-            f"📅 **مدت اعتبار:** {validity_days} روز\n\n"
+            f"📊 **حجم ترافیک:** {traffic_display}\n"
+            f"👥 **تعداد کاربر مجاز:** {users_display}\n"
+            f"📅 **مدت اعتبار:** {validity_display}\n\n"
             "❓ **آیا اطلاعات صحیح است؟**\n\n"
             "✅ برای **تایید و ایجاد ادمین** دکمه تایید را بزنید\n"
             "❌ برای **لغو** دکمه لغو را بزنید"
@@ -3078,30 +3122,45 @@ async def edit_admin_limits_value(message: Message, state: FSMContext):
         return
     
     try:
-        value = message.text.strip()
+        value = message.text.strip().lower()
         
         if limit_type == "users":
-            new_value = int(value)
-            if new_value < 1:
-                await message.answer("❌ تعداد کاربران باید حداقل 1 باشد.")
-                return
-            formatted_value = f"{new_value} کاربر"
+            # Check for unlimited input
+            if value in ['نامحدود', 'unlimited', '-1', '0']:
+                new_value = -1
+                formatted_value = "نامحدود"
+            else:
+                new_value = int(value)
+                if new_value < 1:
+                    await message.answer("❌ تعداد کاربران باید حداقل 1 باشد یا 'نامحدود' بنویسید.")
+                    return
+                formatted_value = f"{new_value} کاربر"
             
         elif limit_type == "traffic":
-            new_value_gb = float(value)
-            if new_value_gb < 0.1:
-                await message.answer("❌ حجم ترافیک باید حداقل 0.1 گیگابایت باشد.")
-                return
-            new_value = gb_to_bytes(new_value_gb)
-            formatted_value = f"{new_value_gb} گیگابایت"
+            # Check for unlimited input
+            if value in ['نامحدود', 'unlimited', '-1', '0']:
+                new_value = -1
+                formatted_value = "نامحدود"
+            else:
+                new_value_gb = float(value)
+                if new_value_gb < 0.1:
+                    await message.answer("❌ حجم ترافیک باید حداقل 0.1 گیگابایت باشد یا 'نامحدود' بنویسید.")
+                    return
+                new_value = gb_to_bytes(new_value_gb)
+                formatted_value = f"{new_value_gb} گیگابایت"
             
         elif limit_type == "time":
-            new_value_days = int(value)
-            if new_value_days < 1:
-                await message.answer("❌ زمان باید حداقل 1 روز باشد.")
-                return
-            new_value = days_to_seconds(new_value_days)
-            formatted_value = f"{new_value_days} روز"
+            # Check for unlimited input
+            if value in ['نامحدود', 'unlimited', '-1', '0']:
+                new_value = -1
+                formatted_value = "نامحدود"
+            else:
+                new_value_days = int(value)
+                if new_value_days < 1:
+                    await message.answer("❌ زمان باید حداقل 1 روز باشد یا 'نامحدود' بنویسید.")
+                    return
+                new_value = days_to_seconds(new_value_days)
+                formatted_value = f"{new_value_days} روز"
         
         # Store new value
         await state.update_data(new_value=new_value, formatted_value=formatted_value)
@@ -3113,15 +3172,18 @@ async def edit_admin_limits_value(message: Message, state: FSMContext):
         
         if limit_type == "users":
             text += f"تعداد کاربران\n"
-            text += f"📊 از: {admin.max_users} کاربر\n"
+            old_users = "نامحدود" if admin.max_users == -1 else f"{admin.max_users} کاربر"
+            text += f"📊 از: {old_users}\n"
             text += f"📈 به: {formatted_value}\n"
         elif limit_type == "traffic":
             text += f"حجم ترافیک\n"
-            text += f"📊 از: {await format_traffic_size(admin.max_total_traffic)}\n"
+            old_traffic = "نامحدود" if admin.max_total_traffic == -1 else await format_traffic_size(admin.max_total_traffic)
+            text += f"📊 از: {old_traffic}\n"
             text += f"📈 به: {formatted_value}\n"
         elif limit_type == "time":
             text += f"زمان استفاده\n"
-            text += f"📊 از: {await format_time_duration(admin.max_total_time)}\n"
+            old_time = "نامحدود" if admin.max_total_time == -1 else await format_time_duration(admin.max_total_time)
+            text += f"📊 از: {old_time}\n"
             text += f"📈 به: {formatted_value}\n"
         
         text += "\nآیا مطمئن هستید؟"
