@@ -18,6 +18,7 @@ from utils.helpers import (
     format_traffic_display, format_time_display, format_credentials,
     format_card_info, format_crypto_address, format_panel_link
 )
+from utils.currency import convert_irr_to_usd, format_currency_info
 import logging
 
 logger = logging.getLogger(__name__)
@@ -501,11 +502,11 @@ async def add_payment_card_number(message: Message, state: FSMContext):
     
     await state.update_data(card_number=card_number)
     
-            await message.answer(
-                f"✅ <b>شماره کارت:</b>\n<code>{card_number}</code>\n\n"
-          "<b>مرحله ۳ از ۴: نام صاحب کارت</b>\n\n"
-          "لطفاً نام صاحب کارت را وارد کنید:",
-            parse_mode='HTML',
+    await message.answer(
+        f"✅ <b>شماره کارت:</b>\n<code>{card_number}</code>\n\n"
+        "<b>مرحله ۳ از ۴: نام صاحب کارت</b>\n\n"
+        "لطفاً نام صاحب کارت را وارد کنید:",
+        parse_mode='HTML',
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="manage_payment_methods")]
         ])
@@ -561,13 +562,13 @@ async def add_payment_bank_name(message: Message, state: FSMContext):
     )
     
     if success:
-                  await message.answer(
-              "✅ <b>روش پرداخت با موفقیت اضافه شد!</b>\n\n"
-              f"💳 <b>نام:</b> {data['method_name']}\n"
-                             f"🔢 <b>شماره کارت:</b>\n<code>{data['card_number']}</code>\n"
-              f"👤 <b>صاحب کارت:</b> {data['card_holder_name']}\n"
-              f"🏦 <b>بانک:</b> {bank_name}",
-              parse_mode='HTML',
+        await message.answer(
+            "✅ <b>روش پرداخت با موفقیت اضافه شد!</b>\n\n"
+            f"💳 <b>نام:</b> {data['method_name']}\n"
+            f"🔢 <b>شماره کارت:</b>\n<code>{data['card_number']}</code>\n"
+            f"👤 <b>صاحب کارت:</b> {data['card_holder_name']}\n"
+            f"🏦 <b>بانک:</b> {bank_name}",
+            parse_mode='HTML',
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="💳 مدیریت کارت‌ها", callback_data="manage_payment_methods")],
                 [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="sales_management")]
@@ -1023,10 +1024,10 @@ async def select_payment_type(callback: CallbackQuery, state: FSMContext):
             selected_method['bank_name']
         )
         instructions = (
-            f"💳 **اطلاعات پرداخت کارت به کارت:**\n\n"
+            f"💳 <b>اطلاعات پرداخت کارت به کارت:</b>\n\n"
             f"{card_info}\n\n"
-            f"💰 **مبلغ قابل پرداخت:** {product['price']:,} تومان\n\n"
-            f"📝 **مراحل پرداخت:**\n"
+            f"💰 <b>مبلغ قابل پرداخت:</b> {product['price']:,} تومان\n\n"
+            f"📝 <b>مراحل پرداخت:</b>\n"
             f"1️⃣ مبلغ را به شماره کارت بالا واریز کنید\n"
             f"2️⃣ اسکرین‌شات رسید واریز را در همین چت ارسال کنید\n"
             f"3️⃣ منتظر تأیید ادمین باشید (حداکثر ۲۴ ساعت)"
@@ -1036,15 +1037,25 @@ async def select_payment_type(callback: CallbackQuery, state: FSMContext):
             selected_method['card_number'], 
             selected_method['method_name']
         )
+        
+        # Convert IRR to USD for crypto payments
+        try:
+            usd_amount, exchange_rate = await convert_irr_to_usd(product['price'])
+            currency_info = format_currency_info(product['price'], usd_amount, exchange_rate)
+        except Exception as e:
+            logger.error(f"Failed to get exchange rate: {e}")
+            # Fallback to simple display
+            currency_info = f"💰 <b>مبلغ:</b> {product['price']:,} تومان معادل ارز"
+        
         instructions = (
-            f"🪙 **اطلاعات پرداخت ارز دیجیتال:**\n\n"
+            f"🪙 <b>اطلاعات پرداخت ارز دیجیتال:</b>\n\n"
             f"{crypto_info}\n\n"
-            f"💰 **مبلغ:** {product['price']:,} تومان معادل ارز\n\n"
-            f"📝 **مراحل پرداخت:**\n"
+            f"{currency_info}\n\n"
+            f"📝 <b>مراحل پرداخت:</b>\n"
             f"1️⃣ معادل مبلغ را به آدرس بالا ارسال کنید\n"
             f"2️⃣ اسکرین‌شات تراکنش را در همین چت ارسال کنید\n"
             f"3️⃣ منتظر تأیید ادمین باشید (حداکثر ۲۴ ساعت)\n\n"
-            f"⚠️ **توجه:** نرخ ارز در زمان پرداخت محاسبه می‌شود"
+            f"⚠️ <b>توجه:</b> نرخ ارز در زمان پرداخت محاسبه می‌شود"
         )
     
     text = f"✅ <b>سفارش ثبت شد</b>\n\n"
