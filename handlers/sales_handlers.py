@@ -13,7 +13,11 @@ from aiogram.fsm.state import State, StatesGroup
 import config
 from database import db
 from models.schemas import AdminModel, SalesProductModel, PaymentMethodModel, SalesOrderModel
-from utils.helpers import safe_callback_answer, truncate_error, convert_unlimited_for_display, format_traffic_display, format_time_display
+from utils.helpers import (
+    safe_callback_answer, truncate_error, convert_unlimited_for_display, 
+    format_traffic_display, format_time_display, format_credentials,
+    format_card_info, format_crypto_address, format_panel_link
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -498,7 +502,7 @@ async def add_payment_card_number(message: Message, state: FSMContext):
     await state.update_data(card_number=card_number)
     
     await message.answer(
-                        f"✅ **شماره کارت:** `{card_number}`\n\n"
+                        f"✅ **شماره کارت:**\n```\n{card_number}\n```\n\n"
         "**مرحله ۳ از ۴: نام صاحب کارت**\n\n"
         "لطفاً نام صاحب کارت را وارد کنید:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -559,7 +563,7 @@ async def add_payment_bank_name(message: Message, state: FSMContext):
         await message.answer(
             "✅ **روش پرداخت با موفقیت اضافه شد!**\n\n"
             f"💳 **نام:** {data['method_name']}\n"
-                            f"🔢 **شماره کارت:** `{data['card_number']}`\n"
+                            f"🔢 **شماره کارت:**\n```\n{data['card_number']}\n```\n"
             f"👤 **صاحب کارت:** {data['card_holder_name']}\n"
             f"🏦 **بانک:** {bank_name}",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1011,11 +1015,14 @@ async def select_payment_type(callback: CallbackQuery, state: FSMContext):
     
     # Show payment instructions
     if payment_type == "card":
+        card_info = format_card_info(
+            selected_method['card_number'], 
+            selected_method['card_holder_name'], 
+            selected_method['bank_name']
+        )
         instructions = (
             f"💳 **اطلاعات پرداخت کارت به کارت:**\n\n"
-            f"🏦 **بانک:** {selected_method['bank_name']}\n"
-            f"💳 **شماره کارت:** `{selected_method['card_number']}`\n"
-            f"👤 **صاحب حساب:** {selected_method['card_holder_name']}\n\n"
+            f"{card_info}\n\n"
             f"💰 **مبلغ قابل پرداخت:** {product['price']:,} تومان\n\n"
             f"📝 **مراحل پرداخت:**\n"
             f"1️⃣ مبلغ را به شماره کارت بالا واریز کنید\n"
@@ -1023,10 +1030,13 @@ async def select_payment_type(callback: CallbackQuery, state: FSMContext):
             f"3️⃣ منتظر تأیید ادمین باشید (حداکثر ۲۴ ساعت)"
         )
     else:  # crypto
+        crypto_info = format_crypto_address(
+            selected_method['card_number'], 
+            selected_method['method_name']
+        )
         instructions = (
             f"🪙 **اطلاعات پرداخت ارز دیجیتال:**\n\n"
-            f"💎 **ارز:** {selected_method['method_name']}\n"
-            f"📍 **آدرس کیف پول:** `{selected_method['card_number']}`\n\n"
+            f"{crypto_info}\n\n"
             f"💰 **مبلغ:** {product['price']:,} تومان معادل ارز\n\n"
             f"📝 **مراحل پرداخت:**\n"
             f"1️⃣ معادل مبلغ را به آدرس بالا ارسال کنید\n"
@@ -1394,10 +1404,9 @@ async def approve_order_and_create_panel(callback: CallbackQuery):
                     text=f"🎉 **سفارش شما تأیید شد!**\n\n"
                          f"🆔 **شماره سفارش:** {order_id}\n"
                          f"📦 **محصول:** {order['product_name']}\n\n"
-                         f"🔐 **اطلاعات ورود به پنل مرزبان:**\n"
-                         f"🌐 **آدرس پنل:** {config.MARZBAN_URL}/dashboard\n"
-                         f"👤 **نام کاربری:** `{marzban_username}`\n"
-                         f"🔑 **رمز عبور:** `{marzban_password}`\n\n"
+                         f"🔐 **اطلاعات ورود به پنل مرزبان:**\n\n"
+                         f"{format_panel_link(f'{config.MARZBAN_URL}/dashboard')}\n\n"
+                         f"{format_credentials(marzban_username, marzban_password)}\n\n"
                          f"📋 **مشخصات پنل:**\n"
                          f"👥 حداکثر کاربران: {convert_unlimited_for_display(order['max_users'])}\n"
                          f"📊 حداکثر ترافیک: {format_traffic_display(order['max_traffic'])}\n"
@@ -1420,9 +1429,8 @@ async def approve_order_and_create_panel(callback: CallbackQuery):
                     f"👤 مشتری: {order['customer_first_name']} (@{order['customer_username']})\n"
                     f"📦 محصول: {order['product_name']}\n"
                     f"💰 مبلغ: {order['total_price']:,} تومان\n\n"
-                    f"🔐 **پنل ایجاد شده:**\n"
-                    f"👤 نام کاربری: `{marzban_username}`\n"
-                    f"🔑 رمز عبور: `{marzban_password}`\n"
+                    f"🔐 **پنل ایجاد شده:**\n\n"
+                    f"{format_credentials(marzban_username, marzban_password)}\n"
                     f"🆔 ID پنل: {admin_id}\n\n"
                     f"📩 اطلاعات برای مشتری ارسال شد.",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1440,9 +1448,8 @@ async def approve_order_and_create_panel(callback: CallbackQuery):
                          f"👤 مشتری: {order['customer_first_name']} (@{order['customer_username']})\n"
                          f"📦 محصول: {order['product_name']}\n"
                          f"💰 مبلغ: {order['total_price']:,} تومان\n\n"
-                         f"🔐 **پنل ایجاد شده:**\n"
-                         f"👤 نام کاربری: `{marzban_username}`\n"
-                         f"🔑 رمز عبور: `{marzban_password}`\n"
+                         f"🔐 **پنل ایجاد شده:**\n\n"
+                         f"{format_credentials(marzban_username, marzban_password)}\n"
                          f"🆔 ID پنل: {admin_id}\n\n"
                          f"📩 اطلاعات برای مشتری ارسال شد.",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[

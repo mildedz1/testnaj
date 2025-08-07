@@ -101,3 +101,91 @@ def format_time_display(seconds_value: int) -> str:
     # Convert seconds to days for display
     days_value = seconds_value / 86400
     return f"{days_value:.1f} روز"
+
+
+def format_copyable_text(text: str, label: str = "") -> str:
+    """
+    Format text for easy copying using code block formatting.
+    This creates a better copy experience than backticks.
+    
+    Args:
+        text: The text to make copyable
+        label: Optional label to display before the copyable text
+        
+    Returns:
+        Formatted string with code block
+    """
+    if label:
+        return f"**{label}:**\n```\n{text}\n```"
+    else:
+        return f"```\n{text}\n```"
+
+
+def format_credentials(username: str, password: str) -> str:
+    """
+    Format username and password for easy copying.
+    Uses code blocks for better copy experience.
+    
+    Args:
+        username: The username
+        password: The password
+        
+    Returns:
+        Formatted credentials string
+    """
+    return (
+        f"👤 **نام کاربری:**\n```\n{username}\n```\n\n"
+        f"🔑 **رمز عبور:**\n```\n{password}\n```"
+    )
+
+
+def format_card_info(card_number: str, holder_name: str, bank_name: str = "") -> str:
+    """
+    Format card information for easy copying.
+    
+    Args:
+        card_number: The card number
+        holder_name: The card holder name
+        bank_name: Optional bank name
+        
+    Returns:
+        Formatted card info string
+    """
+    result = ""
+    if bank_name:
+        result += f"🏦 **بانک:** {bank_name}\n\n"
+    
+    result += f"💳 **شماره کارت:**\n```\n{card_number}\n```\n\n"
+    result += f"👤 **صاحب حساب:** {holder_name}"
+    
+    return result
+
+
+def format_crypto_address(address: str, currency: str = "") -> str:
+    """
+    Format cryptocurrency address for easy copying.
+    
+    Args:
+        address: The wallet address
+        currency: Optional currency name
+        
+    Returns:
+        Formatted crypto address string
+    """
+    if currency:
+        return f"💎 **ارز:** {currency}\n\n📍 **آدرس کیف پول:**\n```\n{address}\n```"
+    else:
+        return f"📍 **آدرس کیف پول:**\n```\n{address}\n```"
+
+
+def format_panel_link(url: str) -> str:
+    """
+    Format panel URL as a clickable link without affecting copyability.
+    
+    Args:
+        url: The panel URL
+        
+    Returns:
+        Formatted URL string
+    """
+    return f"🌐 **آدرس پنل:** {url}"
