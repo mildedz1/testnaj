@@ -10,7 +10,7 @@ import os
 logger = logging.getLogger(__name__)
 
 # Manual exchange rate (can be set via environment variable)
-MANUAL_USD_IRR_RATE = float(os.getenv("USD_IRR_RATE", "75000"))
+MANUAL_USD_IRR_RATE = float(os.getenv("USD_IRR_RATE", "92500"))
 
 async def get_usd_to_irr_rate() -> float:
     """
@@ -20,19 +20,20 @@ async def get_usd_to_irr_rate() -> float:
     Returns:
         float: USD to IRR rate
     """
-    fallback_rate = 75000.0  # Updated fallback rate (more realistic)
+    fallback_rate = 92500.0  # Updated fallback rate based on navasan API
     
     apis_to_try = [
-        # Direct API for Iranian exchange rates
+        # Primary API with your exact specification
         {
-            "url": "https://api.navasan.tech/latest/?api_key=free",
-            "parser": lambda data: float(data.get("usd", {}).get("value", fallback_rate)) if isinstance(data, dict) and data.get("usd") else fallback_rate
+            "url": "http://api.navasan.tech/latest/?api_key=freeZLXIEWtrCyqbttzJWnPvKx8OC832",
+            "parser": lambda data: float(data.get("usd_buy", {}).get("value", fallback_rate)) if isinstance(data, dict) and data.get("usd_buy") and isinstance(data.get("usd_buy"), dict) else fallback_rate
         },
+        # Backup APIs
         {
             "url": "https://api.currencyapi.com/v3/latest?apikey=cur_live_bFJ93gF5X2HLQrFWlq36iaDLi9F6rFb2jYzCMtSu&currencies=IRR&base_currency=USD",
             "parser": lambda data: float(data.get("data", {}).get("IRR", {}).get("value", fallback_rate)) if isinstance(data, dict) else fallback_rate
         },
-        # Try with Iranian market rate multiplier
+        # International rate with multiplier
         {
             "url": "https://api.exchangerate-api.com/v4/latest/USD", 
             "parser": lambda data: float(data.get("rates", {}).get("IRR", 0)) * 1.7 if data.get("rates", {}).get("IRR") and float(data.get("rates", {}).get("IRR", 0)) > 0 else fallback_rate
