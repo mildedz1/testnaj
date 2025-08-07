@@ -16,6 +16,7 @@ from handlers.admin_handlers import admin_router
 from handlers.reward_handlers import reward_router
 from handlers.sales_handlers import sales_router
 from handlers.extension_handlers import extension_router
+from handlers.general_handlers import general_router
 from scheduler import init_scheduler
 
 
@@ -84,6 +85,10 @@ class MarzbanAdminBot:
         logger.info("Registering extension_router (FSM-aware)...")
         self.dp.include_router(extension_router)
         logger.info("✅ extension_router registered successfully")
+        
+        logger.info("Registering general_router for common callbacks...")
+        self.dp.include_router(general_router)
+        logger.info("✅ general_router registered successfully")
         
         logger.info("=== GENERAL HANDLERS (AFTER FSM ROUTERS) ===")
         # Add global handlers AFTER state-specific routers

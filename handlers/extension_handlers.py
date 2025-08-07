@@ -245,19 +245,12 @@ async def handle_extension_amount(message: Message, state: FSMContext):
             card_methods.append(method)
     
     text += "💳 **انتخاب روش پرداخت:**\n"
-    text += "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    text += "روش پرداخت مورد نظر خود را انتخاب کنید:\n\n"
     
     buttons = []
     
-    # Show card-to-card option
+    # Show payment type options only (without details)
     if card_methods:
-        text += "💳 **کارت به کارت:**\n"
-        for method in card_methods:
-            text += f"┃ 🏦 {method['bank_name']}\n"
-            text += f"┃ 💳 {method['card_number']}\n"
-            text += f"┃ 👤 {method['card_holder_name']}\n"
-        text += "\n"
-        
         buttons.append([
             InlineKeyboardButton(
                 text="💳 پرداخت کارت به کارت",
@@ -265,15 +258,7 @@ async def handle_extension_amount(message: Message, state: FSMContext):
             )
         ])
     
-    # Show crypto option
     if crypto_methods:
-        text += "🪙 **ارزهای دیجیتال:**\n"
-        for method in crypto_methods:
-            text += f"┃ 🪙 {method['method_name']}\n"
-            if method['card_number']:
-                text += f"┃ 📍 {method['card_number']}\n"
-        text += "\n"
-        
         buttons.append([
             InlineKeyboardButton(
                 text="🪙 پرداخت با ارز دیجیتال",
@@ -338,24 +323,28 @@ async def select_extension_payment_type(callback: CallbackQuery, state: FSMConte
         payment_method=selected_method
     )
     
-    # Show payment instructions
+    # Show payment instructions with detailed information
     panel_name = admin.admin_name or admin.marzban_username
     unit_name = "گیگابایت" if extension_type == "traffic" else "روز"
     
     if payment_type == "card":
         instructions = (
-            f"💳 **اطلاعات پرداخت کارت به کارت:**\n\n"
+            f"💳 **اطلاعات پرداخت کارت به کارت:**\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🏦 **بانک:** {selected_method['bank_name']}\n"
             f"💳 **شماره کارت:** `{selected_method['card_number']}`\n"
-            f"👤 **صاحب حساب:** {selected_method['card_holder_name']}\n\n"
-            f"💰 **مبلغ قابل پرداخت:** {total_price:,} تومان"
+            f"👤 **صاحب حساب:** {selected_method['card_holder_name']}\n"
+            f"💰 **مبلغ قابل پرداخت:** {total_price:,} تومان\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━"
         )
     else:  # crypto
         instructions = (
-            f"🪙 **اطلاعات پرداخت ارز دیجیتال:**\n\n"
+            f"🪙 **اطلاعات پرداخت ارز دیجیتال:**\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"💎 **ارز:** {selected_method['method_name']}\n"
-            f"📍 **آدرس کیف پول:** `{selected_method['card_number']}`\n\n"
-            f"💰 **مبلغ:** {total_price:,} تومان معادل ارز"
+            f"📍 **آدرس کیف پول:** `{selected_method['card_number']}`\n"
+            f"💰 **مبلغ:** {total_price:,} تومان معادل ارز\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━"
         )
     
     text = f"✅ **درخواست تمدید ثبت شد**\n\n"
@@ -451,3 +440,317 @@ async def handle_extension_payment_screenshot(message: Message, state: FSMContex
     
     logger.info(f"Extension request {request_id} submitted by user {message.from_user.id}")
     await state.clear()
+
+# ============= ADMIN EXTENSION REQUEST MANAGEMENT =============
+
+@extension_router.callback_query(F.data.startswith("approve_ext_req_"))
+async def approve_extension_request(callback: CallbackQuery):
+    """Approve an extension request and update admin limits."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("شما مجاز به این عمل نیستید.", show_alert=True)
+        return
+    
+    request_id = int(callback.data.split("_")[3])
+    
+    # Get request details
+    request_details = await db.get_extension_request_by_id(request_id)
+    if not request_details:
+        await callback.answer("درخواست یافت نشد.", show_alert=True)
+        return
+    
+    if request_details['status'] != 'pending':
+        await callback.answer("این درخواست قبلاً پردازش شده است.", show_alert=True)
+        return
+    
+    # Approve the request
+    success = await db.approve_extension_request(request_id)
+    if not success:
+        await callback.answer("خطا در تأیید درخواست.", show_alert=True)
+        return
+    
+    # Update admin limits based on request type
+    admin_id = request_details['admin_id']
+    request_type = request_details['request_type']
+    requested_amount = request_details['requested_amount']
+    
+    if request_type == 'traffic':
+        # Convert GB to bytes
+        additional_bytes = requested_amount * 1024 * 1024 * 1024
+        current_limit = request_details['max_total_traffic']
+        
+        if current_limit == -1:  # Already unlimited
+            new_limit = -1
+        else:
+            new_limit = current_limit + additional_bytes
+        
+        await db.update_admin_max_traffic(admin_id, new_limit)
+        
+    elif request_type == 'time':
+        # Convert days to seconds
+        additional_seconds = requested_amount * 24 * 3600
+        current_limit = request_details['max_total_time']
+        
+        if current_limit == -1:  # Already unlimited
+            new_limit = -1
+        else:
+            new_limit = current_limit + additional_seconds
+        
+        await db.update_admin_max_time(admin_id, new_limit)
+    
+    # Notify admin (sudoer) about approval
+    try:
+        await callback.message.edit_text(
+            f"✅ **درخواست تأیید شد**\n\n"
+            f"🆔 شماره درخواست: {request_id}\n"
+            f"👤 کاربر: {request_details.get('admin_name', 'ناشناس')}\n"
+            f"📈 نوع: {'افزایش ترافیک' if request_type == 'traffic' else 'افزایش زمان'}\n"
+            f"📊 مقدار: {requested_amount} {'گیگابایت' if request_type == 'traffic' else 'روز'}\n"
+            f"💰 مبلغ: {request_details['total_price']:,} تومان\n\n"
+            f"محدودیت‌های کاربر به‌روزرسانی شد.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📋 مدیریت درخواست‌ها", callback_data="manage_extension_requests")]
+            ])
+        )
+    except Exception as e:
+        logger.error(f"Failed to edit approval message: {e}")
+        await callback.message.answer(
+            f"✅ درخواست {request_id} تأیید شد و محدودیت‌ها به‌روزرسانی شد."
+        )
+    
+    # Notify customer about approval
+    customer_user_id = request_details['admin_user_id']
+    panel_name = request_details.get('admin_name') or request_details.get('marzban_username', 'پنل شما')
+    unit_name = "گیگابایت" if request_type == "traffic" else "روز"
+    
+    try:
+        await callback.bot.send_message(
+            chat_id=customer_user_id,
+            text=f"✅ **درخواست تمدید تأیید شد!**\n\n"
+                 f"🆔 شماره درخواست: {request_id}\n"
+                 f"🎛️ پنل: {panel_name}\n"
+                 f"📈 نوع: {'افزایش ترافیک' if request_type == 'traffic' else 'افزایش زمان'}\n"
+                 f"📊 مقدار: {requested_amount} {unit_name}\n"
+                 f"💰 مبلغ: {request_details['total_price']:,} تومان\n\n"
+                 f"🎉 محدودیت‌های پنل شما افزایش یافت.\n"
+                 f"از خرید شما متشکریم!",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 بازگشت به منو", callback_data="start")]
+            ])
+        )
+    except Exception as e:
+        logger.error(f"Failed to notify customer {customer_user_id}: {e}")
+    
+    logger.info(f"Extension request {request_id} approved by admin {callback.from_user.id}")
+    await callback.answer("درخواست تأیید شد و کاربر مطلع گردید.")
+
+@extension_router.callback_query(F.data.startswith("reject_ext_req_"))
+async def reject_extension_request(callback: CallbackQuery):
+    """Reject an extension request."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("شما مجاز به این عمل نیستید.", show_alert=True)
+        return
+    
+    request_id = int(callback.data.split("_")[3])
+    
+    # Get request details
+    request_details = await db.get_extension_request_by_id(request_id)
+    if not request_details:
+        await callback.answer("درخواست یافت نشد.", show_alert=True)
+        return
+    
+    if request_details['status'] != 'pending':
+        await callback.answer("این درخواست قبلاً پردازش شده است.", show_alert=True)
+        return
+    
+    # Reject the request
+    rejection_reason = "درخواست توسط ادمین رد شد."
+    success = await db.reject_extension_request(request_id, rejection_reason)
+    
+    if not success:
+        await callback.answer("خطا در رد درخواست.", show_alert=True)
+        return
+    
+    # Notify admin (sudoer) about rejection
+    try:
+        await callback.message.edit_text(
+            f"❌ **درخواست رد شد**\n\n"
+            f"🆔 شماره درخواست: {request_id}\n"
+            f"👤 کاربر: {request_details.get('admin_name', 'ناشناس')}\n"
+            f"📈 نوع: {'افزایش ترافیک' if request_details['request_type'] == 'traffic' else 'افزایش زمان'}\n"
+            f"📊 مقدار: {request_details['requested_amount']} {'گیگابایت' if request_details['request_type'] == 'traffic' else 'روز'}\n"
+            f"💰 مبلغ: {request_details['total_price']:,} تومان\n\n"
+            f"دلیل رد: {rejection_reason}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📋 مدیریت درخواست‌ها", callback_data="manage_extension_requests")]
+            ])
+        )
+    except Exception as e:
+        logger.error(f"Failed to edit rejection message: {e}")
+        await callback.message.answer(
+            f"❌ درخواست {request_id} رد شد."
+        )
+    
+    # Notify customer about rejection
+    customer_user_id = request_details['admin_user_id']
+    panel_name = request_details.get('admin_name') or request_details.get('marzban_username', 'پنل شما')
+    unit_name = "گیگابایت" if request_details['request_type'] == "traffic" else "روز"
+    
+    try:
+        await callback.bot.send_message(
+            chat_id=customer_user_id,
+            text=f"❌ **درخواست تمدید رد شد**\n\n"
+                 f"🆔 شماره درخواست: {request_id}\n"
+                 f"🎛️ پنل: {panel_name}\n"
+                 f"📈 نوع: {'افزایش ترافیک' if request_details['request_type'] == 'traffic' else 'افزایش زمان'}\n"
+                 f"📊 مقدار: {request_details['requested_amount']} {unit_name}\n"
+                 f"💰 مبلغ: {request_details['total_price']:,} تومان\n\n"
+                 f"📝 دلیل: {rejection_reason}\n\n"
+                 f"💡 می‌توانید مجدداً درخواست تمدید ارسال کنید.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 بازگشت به منو", callback_data="start")],
+                [InlineKeyboardButton(text="📈 درخواست مجدد", callback_data="request_extension")]
+            ])
+        )
+    except Exception as e:
+        logger.error(f"Failed to notify customer {customer_user_id}: {e}")
+    
+    logger.info(f"Extension request {request_id} rejected by admin {callback.from_user.id}")
+    await callback.answer("درخواست رد شد و کاربر مطلع گردید.")
+
+@extension_router.callback_query(F.data == "manage_extension_requests")
+async def show_extension_requests_management(callback: CallbackQuery):
+    """Show pending extension requests for admin management."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("شما مجاز به این عمل نیستید.", show_alert=True)
+        return
+    
+    pending_requests = await db.get_pending_extension_requests()
+    
+    if not pending_requests:
+        await callback.message.edit_text(
+            "📋 **مدیریت درخواست‌های تمدید**\n\n"
+            "❌ هیچ درخواست در انتظاری وجود ندارد.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 بازگشت", callback_data="start")]
+            ])
+        )
+        await callback.answer()
+        return
+    
+    text = "📋 **درخواست‌های تمدید در انتظار**\n\n"
+    buttons = []
+    
+    for req in pending_requests:
+        unit_name = "گیگابایت" if req['request_type'] == 'traffic' else "روز"
+        panel_name = req.get('admin_name') or req.get('marzban_username', 'ناشناس')
+        
+        text += f"🆔 **درخواست {req['id']}**\n"
+        text += f"👤 کاربر: {panel_name}\n"
+        text += f"📈 نوع: {'افزایش ترافیک' if req['request_type'] == 'traffic' else 'افزایش زمان'}\n"
+        text += f"📊 مقدار: {req['requested_amount']} {unit_name}\n"
+        text += f"💰 مبلغ: {req['total_price']:,} تومان\n"
+        text += f"📅 تاریخ: {req['created_at']}\n\n"
+        
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"📋 مشاهده درخواست {req['id']}",
+                callback_data=f"view_ext_req_{req['id']}"
+            )
+        ])
+    
+    buttons.append([InlineKeyboardButton(text="🏠 بازگشت", callback_data="start")])
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await callback.answer()
+
+@extension_router.callback_query(F.data.startswith("view_ext_req_"))
+async def view_extension_request_details(callback: CallbackQuery):
+    """View detailed information about an extension request."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("شما مجاز به این عمل نیستید.", show_alert=True)
+        return
+    
+    request_id = int(callback.data.split("_")[3])
+    request_details = await db.get_extension_request_by_id(request_id)
+    
+    if not request_details:
+        await callback.answer("درخواست یافت نشد.", show_alert=True)
+        return
+    
+    panel_name = request_details.get('admin_name') or request_details.get('marzban_username', 'ناشناس')
+    unit_name = "گیگابایت" if request_details['request_type'] == 'traffic' else "روز"
+    
+    text = f"📋 **جزئیات درخواست {request_id}**\n\n"
+    text += f"👤 **کاربر:** {panel_name}\n"
+    text += f"🎛️ **پنل:** {request_details.get('marzban_username', 'ناشناس')}\n"
+    text += f"📈 **نوع:** {'افزایش ترافیک' if request_details['request_type'] == 'traffic' else 'افزایش زمان'}\n"
+    text += f"📊 **مقدار:** {request_details['requested_amount']} {unit_name}\n"
+    text += f"💰 **مبلغ:** {request_details['total_price']:,} تومان\n"
+    text += f"📅 **تاریخ درخواست:** {request_details['created_at']}\n"
+    text += f"🏷️ **وضعیت:** {request_details['status']}\n\n"
+    
+    # Show current limits
+    text += f"📊 **محدودیت‌های فعلی:**\n"
+    text += f"👥 کاربران: {'نامحدود' if request_details['max_users'] == -1 else request_details['max_users']}\n"
+    text += f"📊 ترافیک: {'نامحدود' if request_details['max_total_traffic'] == -1 else f"{request_details['max_total_traffic'] // (1024**3)}GB"}\n"
+    text += f"⏱️ زمان: {'نامحدود' if request_details['max_total_time'] == -1 else f"{request_details['max_total_time'] // (24*3600)} روز"}\n"
+    
+    buttons = []
+    if request_details['status'] == 'pending':
+        buttons.extend([
+            [
+                InlineKeyboardButton(text="✅ تأیید", callback_data=f"approve_ext_req_{request_id}"),
+                InlineKeyboardButton(text="❌ رد", callback_data=f"reject_ext_req_{request_id}")
+            ],
+            [InlineKeyboardButton(text="📷 مشاهده رسید", callback_data=f"view_ext_receipt_{request_id}")]
+        ])
+    
+    buttons.append([InlineKeyboardButton(text="🔙 بازگشت", callback_data="manage_extension_requests")])
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await callback.answer()
+
+@extension_router.callback_query(F.data.startswith("view_ext_receipt_"))
+async def view_extension_payment_receipt(callback: CallbackQuery):
+    """View payment receipt for extension request."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("شما مجاز به این عمل نیستید.", show_alert=True)
+        return
+    
+    request_id = int(callback.data.split("_")[3])
+    request_details = await db.get_extension_request_by_id(request_id)
+    
+    if not request_details or not request_details.get('payment_screenshot_file_id'):
+        await callback.answer("رسید پرداخت یافت نشد.", show_alert=True)
+        return
+    
+    panel_name = request_details.get('admin_name') or request_details.get('marzban_username', 'ناشناس')
+    unit_name = "گیگابایت" if request_details['request_type'] == 'traffic' else "روز"
+    
+    try:
+        await callback.bot.send_photo(
+            chat_id=callback.message.chat.id,
+            photo=request_details['payment_screenshot_file_id'],
+            caption=f"📷 **رسید پرداخت درخواست {request_id}**\n\n"
+                   f"👤 کاربر: {panel_name}\n"
+                   f"📈 نوع: {'افزایش ترافیک' if request_details['request_type'] == 'traffic' else 'افزایش زمان'}\n"
+                   f"📊 مقدار: {request_details['requested_amount']} {unit_name}\n"
+                   f"💰 مبلغ: {request_details['total_price']:,} تومان",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="✅ تأیید", callback_data=f"approve_ext_req_{request_id}"),
+                    InlineKeyboardButton(text="❌ رد", callback_data=f"reject_ext_req_{request_id}")
+                ],
+                [InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"view_ext_req_{request_id}")]
+            ])
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Failed to send receipt photo: {e}")
+        await callback.answer("خطا در نمایش رسید.", show_alert=True)
