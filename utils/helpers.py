@@ -37,3 +37,67 @@ def truncate_error(error: Exception, max_length: int = 100) -> str:
     if len(error_str) > max_length:
         return error_str[:max_length-3] + "..."
     return error_str
+
+
+def convert_unlimited_for_display(value: int) -> str:
+    """
+    Convert -1 (unlimited) to نامحدود for display purposes.
+    
+    Args:
+        value: The numeric value
+        
+    Returns:
+        "نامحدود" if value is -1, otherwise str(value)
+    """
+    return "نامحدود" if value == -1 else str(value)
+
+
+def convert_unlimited_for_api(value: int, large_number: int = 999999999) -> int:
+    """
+    Convert -1 (unlimited) to a very large number for API calls.
+    This is needed because some APIs don't accept -1 but need a large number instead.
+    
+    Args:
+        value: The numeric value
+        large_number: The large number to use instead of -1
+        
+    Returns:
+        large_number if value is -1, otherwise the original value
+    """
+    return large_number if value == -1 else value
+
+
+def format_traffic_display(bytes_value: int) -> str:
+    """
+    Format traffic for display with unlimited handling.
+    
+    Args:
+        bytes_value: Traffic in bytes (-1 for unlimited)
+        
+    Returns:
+        Formatted string for display
+    """
+    if bytes_value == -1:
+        return "نامحدود"
+    
+    # Convert bytes to GB for display
+    gb_value = bytes_value / (1024 ** 3)
+    return f"{gb_value:.1f} GB"
+
+
+def format_time_display(seconds_value: int) -> str:
+    """
+    Format time for display with unlimited handling.
+    
+    Args:
+        seconds_value: Time in seconds (-1 for unlimited)
+        
+    Returns:
+        Formatted string for display
+    """
+    if seconds_value == -1:
+        return "نامحدود"
+    
+    # Convert seconds to days for display
+    days_value = seconds_value / 86400
+    return f"{days_value:.1f} روز"

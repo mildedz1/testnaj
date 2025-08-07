@@ -13,7 +13,7 @@ from aiogram.fsm.state import State, StatesGroup
 import config
 from database import db
 from models.schemas import AdminModel, SalesProductModel, PaymentMethodModel, SalesOrderModel
-from utils.helpers import safe_callback_answer, truncate_error
+from utils.helpers import safe_callback_answer, truncate_error, convert_unlimited_for_display, format_traffic_display, format_time_display
 import logging
 
 logger = logging.getLogger(__name__)
@@ -828,11 +828,16 @@ async def show_products_for_purchase(callback: CallbackQuery):
         text += f"┏━━━━━━━━━━━━━━━━━━━━━━━\n"
         text += f"┃ 💰 **قیمت:** {product['price']:,} {product['currency']}\n"
         
-        # Handle unlimited values
-        users_display = "نامحدود" if product['max_users'] == -1 else f"{product['max_users']} نفر"
-        traffic_display = "نامحدود" if product['max_traffic'] == -1 else f"{product['max_traffic'] // (1024**3)} گیگابایت"
-        time_display = "نامحدود" if product['max_time'] == -1 else f"{product['max_time'] // (24*3600)} روز"
-        validity_display = "نامحدود" if product['validity_days'] == -1 else f"{product['validity_days']} روز"
+        # Handle unlimited values with utility functions
+        users_display = convert_unlimited_for_display(product['max_users'])
+        if users_display != "نامحدود":
+            users_display += " نفر"
+            
+        traffic_display = format_traffic_display(product['max_traffic'])
+        time_display = format_time_display(product['max_time'])
+        validity_display = convert_unlimited_for_display(product['validity_days'])
+        if validity_display != "نامحدود":
+            validity_display += " روز"
         
         text += f"┃ 👥 **کاربران:** {users_display}\n"
         text += f"┃ 📊 **ترافیک:** {traffic_display}\n"

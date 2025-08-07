@@ -12,10 +12,10 @@ class AdminModel(BaseModel):
     username: Optional[str] = None  # Telegram username (for compatibility)
     first_name: Optional[str] = None
     last_name: Optional[str] = None
-    max_users: int = Field(default=10, ge=1)
-    max_total_time: int = Field(default=2592000, ge=0)  # 30 days in seconds
-    max_total_traffic: int = Field(default=107374182400, ge=0)  # 100GB in bytes
-    validity_days: int = Field(default=30, ge=1)  # Validity period in days
+    max_users: int = Field(default=10, ge=-1)  # -1 means unlimited
+    max_total_time: int = Field(default=2592000, ge=-1)  # -1 means unlimited, 30 days in seconds
+    max_total_traffic: int = Field(default=107374182400, ge=-1)  # -1 means unlimited, 100GB in bytes
+    validity_days: int = Field(default=30, ge=-1)  # -1 means unlimited, validity period in days
     is_active: bool = Field(default=True)
     original_password: Optional[str] = None  # Store original password for reactivation
     deactivated_at: Optional[datetime] = None  # When admin was deactivated
