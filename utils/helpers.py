@@ -124,7 +124,7 @@ def format_copyable_text(text: str, label: str = "") -> str:
 def format_credentials(username: str, password: str) -> str:
     """
     Format username and password for easy copying.
-    Uses code blocks for better copy experience.
+    Uses HTML code tags for better copy experience.
     
     Args:
         username: The username
@@ -134,8 +134,8 @@ def format_credentials(username: str, password: str) -> str:
         Formatted credentials string
     """
     return (
-        f"👤 **نام کاربری:**\n```\n{username}\n```\n\n"
-        f"🔑 **رمز عبور:**\n```\n{password}\n```"
+        f"👤 <b>نام کاربری:</b>\n<code>{username}</code>\n\n"
+        f"🔑 <b>رمز عبور:</b>\n<code>{password}</code>"
     )
 
 
@@ -153,10 +153,10 @@ def format_card_info(card_number: str, holder_name: str, bank_name: str = "") ->
     """
     result = ""
     if bank_name:
-        result += f"🏦 **بانک:** {bank_name}\n\n"
+        result += f"🏦 <b>بانک:</b> {bank_name}\n\n"
     
-    result += f"💳 **شماره کارت:**\n```\n{card_number}\n```\n\n"
-    result += f"👤 **صاحب حساب:** {holder_name}"
+    result += f"💳 <b>شماره کارت:</b>\n<code>{card_number}</code>\n\n"
+    result += f"👤 <b>صاحب حساب:</b> {holder_name}"
     
     return result
 
@@ -173,9 +173,9 @@ def format_crypto_address(address: str, currency: str = "") -> str:
         Formatted crypto address string
     """
     if currency:
-        return f"💎 **ارز:** {currency}\n\n📍 **آدرس کیف پول:**\n```\n{address}\n```"
+        return f"💎 <b>ارز:</b> {currency}\n\n📍 <b>آدرس کیف پول:</b>\n<code>{address}</code>"
     else:
-        return f"📍 **آدرس کیف پول:**\n```\n{address}\n```"
+        return f"📍 <b>آدرس کیف پول:</b>\n<code>{address}</code>"
 
 
 def format_panel_link(url: str) -> str:
@@ -188,4 +188,4 @@ def format_panel_link(url: str) -> str:
     Returns:
         Formatted URL string
     """
-    return f"🌐 **آدرس پنل:** {url}"
+    return f"🌐 <b>آدرس پنل:</b> {url}"

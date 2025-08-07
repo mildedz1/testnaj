@@ -501,10 +501,11 @@ async def add_payment_card_number(message: Message, state: FSMContext):
     
     await state.update_data(card_number=card_number)
     
-    await message.answer(
-                        f"✅ **شماره کارت:**\n```\n{card_number}\n```\n\n"
-        "**مرحله ۳ از ۴: نام صاحب کارت**\n\n"
-        "لطفاً نام صاحب کارت را وارد کنید:",
+            await message.answer(
+                f"✅ <b>شماره کارت:</b>\n<code>{card_number}</code>\n\n"
+          "<b>مرحله ۳ از ۴: نام صاحب کارت</b>\n\n"
+          "لطفاً نام صاحب کارت را وارد کنید:",
+            parse_mode='HTML',
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="manage_payment_methods")]
         ])
@@ -560,12 +561,13 @@ async def add_payment_bank_name(message: Message, state: FSMContext):
     )
     
     if success:
-        await message.answer(
-            "✅ **روش پرداخت با موفقیت اضافه شد!**\n\n"
-            f"💳 **نام:** {data['method_name']}\n"
-                            f"🔢 **شماره کارت:**\n```\n{data['card_number']}\n```\n"
-            f"👤 **صاحب کارت:** {data['card_holder_name']}\n"
-            f"🏦 **بانک:** {bank_name}",
+                  await message.answer(
+              "✅ <b>روش پرداخت با موفقیت اضافه شد!</b>\n\n"
+              f"💳 <b>نام:</b> {data['method_name']}\n"
+                             f"🔢 <b>شماره کارت:</b>\n<code>{data['card_number']}</code>\n"
+              f"👤 <b>صاحب کارت:</b> {data['card_holder_name']}\n"
+              f"🏦 <b>بانک:</b> {bank_name}",
+              parse_mode='HTML',
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="💳 مدیریت کارت‌ها", callback_data="manage_payment_methods")],
                 [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="sales_management")]
@@ -1045,13 +1047,14 @@ async def select_payment_type(callback: CallbackQuery, state: FSMContext):
             f"⚠️ **توجه:** نرخ ارز در زمان پرداخت محاسبه می‌شود"
         )
     
-    text = f"✅ **سفارش ثبت شد**\n\n"
-    text += f"🆔 **شماره سفارش:** {order_id}\n"
-    text += f"📦 **محصول:** {product['name']}\n\n"
+    text = f"✅ <b>سفارش ثبت شد</b>\n\n"
+    text += f"🆔 <b>شماره سفارش:</b> {order_id}\n"
+    text += f"📦 <b>محصول:</b> {product['name']}\n\n"
     text += instructions
     
     await callback.message.edit_text(
         text,
+        parse_mode='HTML',
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="❌ لغو سفارش", callback_data=f"cancel_order_{order_id}")],
             [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="buy_panel")]
@@ -1401,19 +1404,20 @@ async def approve_order_and_create_panel(callback: CallbackQuery):
             try:
                 await callback.message.bot.send_message(
                     chat_id=order['customer_user_id'],
-                    text=f"🎉 **سفارش شما تأیید شد!**\n\n"
-                         f"🆔 **شماره سفارش:** {order_id}\n"
-                         f"📦 **محصول:** {order['product_name']}\n\n"
-                         f"🔐 **اطلاعات ورود به پنل مرزبان:**\n\n"
+                    text=f"🎉 <b>سفارش شما تأیید شد!</b>\n\n"
+                         f"🆔 <b>شماره سفارش:</b> {order_id}\n"
+                         f"📦 <b>محصول:</b> {order['product_name']}\n\n"
+                         f"🔐 <b>اطلاعات ورود به پنل مرزبان:</b>\n\n"
                          f"{format_panel_link(f'{config.MARZBAN_URL}/dashboard')}\n\n"
                          f"{format_credentials(marzban_username, marzban_password)}\n\n"
-                         f"📋 **مشخصات پنل:**\n"
+                         f"📋 <b>مشخصات پنل:</b>\n"
                          f"👥 حداکثر کاربران: {convert_unlimited_for_display(order['max_users'])}\n"
                          f"📊 حداکثر ترافیک: {format_traffic_display(order['max_traffic'])}\n"
                          f"⏱️ حداکثر زمان: {format_time_display(order['max_time'])}\n"
                          f"📅 اعتبار: {convert_unlimited_for_display(order['validity_days'])} {'روز' if order['validity_days'] != -1 else ''}\n\n"
                          f"✨ پنل شما در سرور مرزبان ایجاد شد و فعال است.\n"
                          f"🎯 برای مدیریت پنل از ربات، دستور /start را ارسال کنید.",
+                    parse_mode='HTML',
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text="🏠 شروع استفاده", callback_data="start")]
                     ])
