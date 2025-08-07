@@ -92,7 +92,7 @@ async def select_panel_for_extension(callback: CallbackQuery, state: FSMContext)
     # Check current limits to determine pricing
     has_unlimited_users = admin.max_users == -1
     has_unlimited_time = admin.max_total_time == -1
-    is_premium = has_unlimited_users and has_unlimited_time
+    is_volume_panel = has_unlimited_users and has_unlimited_time
     
     text = f"📈 **درخواست تمدید پنل**\n\n"
     text += f"🎛️ **پنل:** {panel_name}\n\n"
@@ -101,8 +101,11 @@ async def select_panel_for_extension(callback: CallbackQuery, state: FSMContext)
     text += f"📊 ترافیک: {'نامحدود' if admin.max_total_traffic == -1 else f'{admin.max_total_traffic // (1024**3)}GB'}\n"
     text += f"⏱️ زمان: {'نامحدود' if admin.max_total_time == -1 else f'{admin.max_total_time // (24*3600)} روز'}\n\n"
     
+    panel_type = "پنل های حجمی" if is_volume_panel else "پنل های عادی"
+    text += f"🏷️ **نوع پنل:** {panel_type}\n\n"
+    
     text += f"💰 **قیمت‌های تمدید:**\n"
-    traffic_price = 1500 if is_premium else 1000
+    traffic_price = 1500 if is_volume_panel else 1000
     text += f"📊 ترافیک: {traffic_price:,} تومان/گیگابایت\n"
     text += f"⏱️ زمان: ۲۰۰,۰۰۰ تومان/۳۰ روز\n\n"
     text += f"چه نوع تمدیدی می‌خواهید؟"
@@ -136,17 +139,21 @@ async def select_extension_type(callback: CallbackQuery, state: FSMContext):
     # Check if panel has unlimited users and time for pricing
     has_unlimited_users = admin.max_users == -1
     has_unlimited_time = admin.max_total_time == -1
-    is_premium = has_unlimited_users and has_unlimited_time
+    is_volume_panel = has_unlimited_users and has_unlimited_time
+    
+    panel_type = "پنل حجمی" if is_volume_panel else "پنل عادی"
     
     if extension_type == "traffic":
-        price_per_gb = 1500 if is_premium else 1000
+        price_per_gb = 1500 if is_volume_panel else 1000
         text = f"📊 **افزایش ترافیک**\n\n"
+        text += f"🏷️ **نوع پنل:** {panel_type}\n"
         text += f"💰 **قیمت:** {price_per_gb:,} تومان هر گیگابایت\n\n"
         text += f"چند گیگابایت ترافیک می‌خواهید اضافه کنید؟\n"
         text += f"مثال: 10 (برای ۱۰ گیگابایت)"
         
     else:  # time
         text = f"⏱️ **افزایش زمان**\n\n"
+        text += f"🏷️ **نوع پنل:** {panel_type}\n"
         text += f"💰 **قیمت:** ۲۰۰,۰۰۰ تومان هر ۳۰ روز\n\n"
         text += f"چند روز زمان می‌خواهید اضافه کنید؟\n"
         text += f"مثال: 30 (برای ۳۰ روز)\n"
@@ -186,10 +193,10 @@ async def handle_extension_amount(message: Message, state: FSMContext):
     # Calculate price
     has_unlimited_users = admin.max_users == -1
     has_unlimited_time = admin.max_total_time == -1
-    is_premium = has_unlimited_users and has_unlimited_time
+    is_volume_panel = has_unlimited_users and has_unlimited_time
     
     if extension_type == "traffic":
-        price_per_unit = 1500 if is_premium else 1000
+        price_per_unit = 1500 if is_volume_panel else 1000
         total_price = amount * price_per_unit
         unit_name = "گیگابایت"
     else:  # time
