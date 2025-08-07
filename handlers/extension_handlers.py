@@ -695,8 +695,20 @@ async def view_extension_request_details(callback: CallbackQuery):
     # Show current limits
     text += f"📊 **محدودیت‌های فعلی:**\n"
     text += f"👥 کاربران: {'نامحدود' if request_details['max_users'] == -1 else request_details['max_users']}\n"
-    text += f"📊 ترافیک: {'نامحدود' if request_details['max_total_traffic'] == -1 else f"{request_details['max_total_traffic'] // (1024**3)}GB"}\n"
-    text += f"⏱️ زمان: {'نامحدود' if request_details['max_total_time'] == -1 else f"{request_details['max_total_time'] // (24*3600)} روز"}\n"
+    
+    # Handle traffic display
+    if request_details['max_total_traffic'] == -1:
+        traffic_display = "نامحدود"
+    else:
+        traffic_display = f"{request_details['max_total_traffic'] // (1024**3)}GB"
+    text += f"📊 ترافیک: {traffic_display}\n"
+    
+    # Handle time display
+    if request_details['max_total_time'] == -1:
+        time_display = "نامحدود"
+    else:
+        time_display = f"{request_details['max_total_time'] // (24*3600)} روز"
+    text += f"⏱️ زمان: {time_display}\n"
     
     buttons = []
     if request_details['status'] == 'pending':
