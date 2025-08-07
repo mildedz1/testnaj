@@ -1421,8 +1421,8 @@ async def approve_order_and_create_panel(callback: CallbackQuery):
                     f"📦 محصول: {order['product_name']}\n"
                     f"💰 مبلغ: {order['total_price']:,} تومان\n\n"
                     f"🔐 **پنل ایجاد شده:**\n"
-                    f"👤 نام کاربری: {marzban_username}\n"
-                    f"🔑 رمز عبور: {marzban_password}\n"
+                    f"👤 نام کاربری: `{marzban_username}`\n"
+                    f"🔑 رمز عبور: `{marzban_password}`\n"
                     f"🆔 ID پنل: {admin_id}\n\n"
                     f"📩 اطلاعات برای مشتری ارسال شد.",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1441,8 +1441,8 @@ async def approve_order_and_create_panel(callback: CallbackQuery):
                          f"📦 محصول: {order['product_name']}\n"
                          f"💰 مبلغ: {order['total_price']:,} تومان\n\n"
                          f"🔐 **پنل ایجاد شده:**\n"
-                         f"👤 نام کاربری: {marzban_username}\n"
-                         f"🔑 رمز عبور: {marzban_password}\n"
+                         f"👤 نام کاربری: `{marzban_username}`\n"
+                         f"🔑 رمز عبور: `{marzban_password}`\n"
                          f"🆔 ID پنل: {admin_id}\n\n"
                          f"📩 اطلاعات برای مشتری ارسال شد.",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
