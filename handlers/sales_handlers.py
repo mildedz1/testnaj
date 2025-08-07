@@ -33,6 +33,8 @@ class SalesManagementStates(StatesGroup):
     waiting_for_product_traffic = State()
     waiting_for_product_time = State()
     waiting_for_payment_method_name = State()
+    waiting_for_payment_type_selection = State()
+    waiting_for_payment_details = State()
     waiting_for_card_number = State()
     waiting_for_card_holder = State()
     waiting_for_bank_name = State()
@@ -427,13 +429,37 @@ async def manage_payment_methods_menu(callback: CallbackQuery):
     text = "💳 **مدیریت روش‌های پرداخت**\n\n"
     
     if methods:
-        text += f"📊 تعداد کارت‌ها: {len(methods)}\n\n"
+        text += f"📊 تعداد روش‌های پرداخت: {len(methods)}\n\n"
         for method in methods:
             status = "✅" if method['is_active'] else "❌"
+            payment_type = method.get('payment_type', 'card')
+            type_icon = "💳" if payment_type == "card" else "🪙"
+            type_name = "کارت به کارت" if payment_type == "card" else "ارز دیجیتال"
+            
             text += f"{status} **{method['method_name']}**\n"
-            text += f"   💳 کارت: {method['card_number']}\n"
-            text += f"   👤 صاحب کارت: {method['card_holder_name']}\n"
-            text += f"   🏦 بانک: {method['bank_name']}\n\n"
+            text += f"   {type_icon} نوع: {type_name}\n"
+            
+            # Display details based on type
+            if payment_type == "card" and method.get('payment_details'):
+                try:
+                    details = json.loads(method['payment_details'])
+                    cards = details.get('cards', [])
+                    text += f"   🔢 تعداد کارت: {len(cards)} عدد\n"
+                except:
+                    # Fallback to legacy display
+                    if method.get('card_number'):
+                        text += f"   💳 کارت: {method['card_number']}\n"
+            elif payment_type == "crypto" and method.get('payment_details'):
+                try:
+                    details = json.loads(method['payment_details'])
+                    wallets = details.get('wallets', [])
+                    text += f"   🔢 تعداد آدرس: {len(wallets)} عدد\n"
+                except:
+                    pass
+            elif method.get('card_number'):  # Legacy data
+                text += f"   💳 کارت: {method['card_number']}\n"
+            
+            text += "\n"
     else:
         text += "هیچ روش پرداختی تعریف نشده است.\n\n"
     
@@ -481,15 +507,175 @@ async def add_payment_method_name(message: Message, state: FSMContext):
     
     await message.answer(
         f"✅ **نام روش:** {method_name}\n\n"
-        "**مرحله ۲ از ۴: شماره کارت**\n\n"
-        "لطفاً شماره کارت را وارد کنید:\n"
-        "مثال: 6037-9977-1234-5678",
+        "**مرحله ۲: انتخاب نوع پرداخت**\n\n"
+        "این روش پرداخت چه نوعی است؟",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💳 کارت به کارت", callback_data="payment_type_card")],
+            [InlineKeyboardButton(text="🪙 ارز دیجیتال", callback_data="payment_type_crypto")],
             [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="manage_payment_methods")]
         ])
     )
     
-    await state.set_state(SalesManagementStates.waiting_for_card_number)
+    await state.set_state(SalesManagementStates.waiting_for_payment_type_selection)
+
+@sales_router.callback_query(F.data.startswith("payment_type_"))
+async def select_payment_type(callback: CallbackQuery, state: FSMContext):
+    """Handle payment type selection."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    payment_type = callback.data.replace("payment_type_", "")
+    await state.update_data(payment_type=payment_type)
+    
+    if payment_type == "card":
+        await callback.message.edit_text(
+            "💳 **کارت به کارت**\n\n"
+            "**مرحله ۳: اطلاعات کارت‌ها**\n\n"
+            "لطفاً اطلاعات کارت‌ها را در فرمت زیر وارد کنید:\n\n"
+            "```\n"
+            "شماره کارت: 6037-9977-1234-5678\n"
+            "صاحب کارت: احمد محمدی\n"
+            "بانک: بانک ملی\n"
+            "---\n"
+            "شماره کارت: 6274-5588-9999-1111\n"
+            "صاحب کارت: محمد احمدی\n"
+            "بانک: بانک پاسارگاد\n"
+            "```\n\n"
+            "💡 **نکته:** هر کارت را با خط جداکننده `---` از کارت بعدی جدا کنید.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="manage_payment_methods")]
+            ]),
+            parse_mode='Markdown'
+        )
+    else:  # crypto
+        await callback.message.edit_text(
+            "🪙 **ارز دیجیتال**\n\n"
+            "**مرحله ۳: آدرس کیف‌پول‌ها**\n\n"
+            "لطفاً آدرس کیف‌پول‌ها را در فرمت زیر وارد کنید:\n\n"
+            "```\n"
+            "ارز: USDT (TRC20)\n"
+            "آدرس: TRX123456789abcdef...\n"
+            "---\n"
+            "ارز: Bitcoin\n"
+            "آدرس: bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh\n"
+            "---\n"
+            "ارز: Ethereum\n"
+            "آدرس: 0x742d35Cc6634C0532925a3b8D91329E2e30f5e47\n"
+            "```\n\n"
+            "💡 **نکته:** هر آدرس را با خط جداکننده `---` از آدرس بعدی جدا کنید.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="manage_payment_methods")]
+            ]),
+            parse_mode='Markdown'
+        )
+    
+    await state.set_state(SalesManagementStates.waiting_for_payment_details)
+    await callback.answer()
+
+@sales_router.message(SalesManagementStates.waiting_for_payment_details, F.text)
+async def add_payment_details(message: Message, state: FSMContext):
+    """Handle payment details input."""
+    if message.from_user.id not in config.SUDO_ADMINS:
+        return
+    
+    data = await state.get_data()
+    method_name = data.get('method_name')
+    payment_type = data.get('payment_type')
+    details_text = message.text.strip()
+    
+    try:
+        # Parse the input based on payment type
+        if payment_type == "card":
+            cards = []
+            card_blocks = details_text.split('---')
+            
+            for block in card_blocks:
+                block = block.strip()
+                if not block:
+                    continue
+                
+                card_info = {}
+                lines = block.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line.startswith('شماره کارت:'):
+                        card_info['number'] = line.replace('شماره کارت:', '').strip()
+                    elif line.startswith('صاحب کارت:'):
+                        card_info['holder'] = line.replace('صاحب کارت:', '').strip()
+                    elif line.startswith('بانک:'):
+                        card_info['bank'] = line.replace('بانک:', '').strip()
+                
+                if card_info.get('number') and card_info.get('holder') and card_info.get('bank'):
+                    cards.append(card_info)
+            
+            if not cards:
+                await message.answer("❌ لطفاً حداقل یک کارت معتبر وارد کنید.")
+                return
+            
+            payment_details = json.dumps({"cards": cards}, ensure_ascii=False)
+            
+        else:  # crypto
+            wallets = []
+            wallet_blocks = details_text.split('---')
+            
+            for block in wallet_blocks:
+                block = block.strip()
+                if not block:
+                    continue
+                
+                wallet_info = {}
+                lines = block.split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line.startswith('ارز:'):
+                        wallet_info['currency'] = line.replace('ارز:', '').strip()
+                    elif line.startswith('آدرس:'):
+                        wallet_info['address'] = line.replace('آدرس:', '').strip()
+                
+                if wallet_info.get('currency') and wallet_info.get('address'):
+                    wallets.append(wallet_info)
+            
+            if not wallets:
+                await message.answer("❌ لطفاً حداقل یک آدرس کیف‌پول معتبر وارد کنید.")
+                return
+            
+            payment_details = json.dumps({"wallets": wallets}, ensure_ascii=False)
+        
+        # Save to database
+        success = await db.add_payment_method(
+            method_name=method_name,
+            payment_type=payment_type,
+            payment_details=payment_details
+        )
+        
+        if success:
+            if payment_type == "card":
+                count = len(json.loads(payment_details)["cards"])
+                await message.answer(
+                    f"✅ **روش پرداخت با موفقیت اضافه شد!**\n\n"
+                    f"📝 **نام:** {method_name}\n"
+                    f"💳 **نوع:** کارت به کارت\n"
+                    f"🔢 **تعداد کارت:** {count} عدد"
+                )
+            else:
+                count = len(json.loads(payment_details)["wallets"])
+                await message.answer(
+                    f"✅ **روش پرداخت با موفقیت اضافه شد!**\n\n"
+                    f"📝 **نام:** {method_name}\n"
+                    f"🪙 **نوع:** ارز دیجیتال\n"
+                    f"🔢 **تعداد آدرس:** {count} عدد"
+                )
+        else:
+            await message.answer(
+                "❌ **خطا در ایجاد روش پرداخت**\n\n"
+                "لطفاً دوباره تلاش کنید."
+            )
+    
+    except Exception as e:
+        await message.answer(f"❌ خطا در پردازش اطلاعات: {str(e)}")
+    
+    await state.clear()
 
 @sales_router.message(SalesManagementStates.waiting_for_card_number, F.text)
 async def add_payment_card_number(message: Message, state: FSMContext):
@@ -611,7 +797,15 @@ async def edit_payment_method_select(callback: CallbackQuery):
     
     for method in methods:
         status = "✅" if method['is_active'] else "❌"
-        button_text = f"{status} {method['method_name']} ({method['card_number'][:4]}***)"
+        payment_type = method.get('payment_type', 'card')
+        type_icon = "💳" if payment_type == "card" else "🪙"
+        
+        # Create button text based on payment type
+        if payment_type == "card" and method.get('card_number'):
+            button_text = f"{status} {type_icon} {method['method_name']} ({method['card_number'][:4]}***)"
+        else:
+            button_text = f"{status} {type_icon} {method['method_name']}"
+            
         keyboard_buttons.append([
             InlineKeyboardButton(
                 text=button_text, 
@@ -644,30 +838,158 @@ async def edit_payment_method_details(callback: CallbackQuery):
     
     status = "فعال" if method['is_active'] else "غیرفعال"
     status_icon = "✅" if method['is_active'] else "❌"
+    payment_type = method.get('payment_type', 'card')
+    type_icon = "💳" if payment_type == "card" else "🪙"
+    type_name = "کارت به کارت" if payment_type == "card" else "ارز دیجیتال"
     
-    text = f"💳 **ویرایش کارت: {method['method_name']}**\n\n"
+    text = f"{type_icon} **ویرایش: {method['method_name']}**\n\n"
     text += f"📋 **اطلاعات فعلی:**\n"
     text += f"• نام: {method['method_name']}\n"
-    text += f"• شماره کارت: <code>{method['card_number']}</code>\n"
-    text += f"• نام صاحب کارت: {method['card_holder_name']}\n"
-    text += f"• بانک: {method['bank_name']}\n"
+    text += f"• نوع: {type_name}\n"
+    
+    # Display details based on type
+    if payment_type == "card" and method.get('payment_details'):
+        try:
+            details = json.loads(method['payment_details'])
+            cards = details.get('cards', [])
+            text += f"• تعداد کارت: {len(cards)} عدد\n"
+        except:
+            # Fallback to legacy display
+            if method.get('card_number'):
+                text += f"• شماره کارت: <code>{method['card_number']}</code>\n"
+                if method.get('card_holder_name'):
+                    text += f"• صاحب کارت: {method['card_holder_name']}\n"
+                if method.get('bank_name'):
+                    text += f"• بانک: {method['bank_name']}\n"
+    elif payment_type == "crypto" and method.get('payment_details'):
+        try:
+            details = json.loads(method['payment_details'])
+            wallets = details.get('wallets', [])
+            text += f"• تعداد آدرس: {len(wallets)} عدد\n"
+        except:
+            pass
+    elif method.get('card_number'):  # Legacy data
+        text += f"• شماره کارت: <code>{method['card_number']}</code>\n"
+        if method.get('card_holder_name'):
+            text += f"• صاحب کارت: {method['card_holder_name']}\n"
+        if method.get('bank_name'):
+            text += f"• بانک: {method['bank_name']}\n"
+    
     text += f"• وضعیت: {status_icon} {status}\n\n"
     text += "کدام بخش را می‌خواهید ویرایش کنید؟"
     
     toggle_text = "غیرفعال کردن" if method['is_active'] else "فعال کردن"
     toggle_callback = f"toggle_payment_{payment_id}"
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    # Build keyboard based on payment type
+    keyboard_buttons = [
         [InlineKeyboardButton(text="📝 نام روش پرداخت", callback_data=f"edit_payment_name_{payment_id}")],
-        [InlineKeyboardButton(text="💳 شماره کارت", callback_data=f"edit_payment_card_{payment_id}")],
-        [InlineKeyboardButton(text="👤 نام صاحب کارت", callback_data=f"edit_payment_holder_{payment_id}")],
-        [InlineKeyboardButton(text="🏦 نام بانک", callback_data=f"edit_payment_bank_{payment_id}")],
+        [InlineKeyboardButton(text="📋 ویرایش جزئیات", callback_data=f"edit_payment_full_details_{payment_id}")],
+    ]
+    
+    # Add legacy edit options for old card data
+    if payment_type == "card" and method.get('card_number'):
+        keyboard_buttons.extend([
+            [InlineKeyboardButton(text="💳 شماره کارت", callback_data=f"edit_payment_card_{payment_id}")],
+            [InlineKeyboardButton(text="👤 نام صاحب کارت", callback_data=f"edit_payment_holder_{payment_id}")],
+            [InlineKeyboardButton(text="🏦 نام بانک", callback_data=f"edit_payment_bank_{payment_id}")],
+        ])
+    
+    keyboard_buttons.extend([
         [InlineKeyboardButton(text=f"🔄 {toggle_text}", callback_data=toggle_callback)],
-        [InlineKeyboardButton(text="🗑 حذف کارت", callback_data=f"delete_payment_{payment_id}")],
+        [InlineKeyboardButton(text="🗑 حذف", callback_data=f"delete_payment_{payment_id}")],
         [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="edit_payment_method")]
     ])
     
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+    
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode='HTML')
+    await callback.answer()
+
+@sales_router.callback_query(F.data.startswith("edit_payment_full_details_"))
+async def edit_payment_full_details(callback: CallbackQuery, state: FSMContext):
+    """Start editing full payment details (cards/wallets)."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    payment_id = int(callback.data.replace("edit_payment_full_details_", ""))
+    method = await db.get_payment_method_by_id(payment_id)
+    
+    if not method:
+        await callback.answer("روش پرداخت یافت نشد", show_alert=True)
+        return
+    
+    payment_type = method.get('payment_type', 'card')
+    await state.update_data(payment_id=payment_id, edit_field="payment_details", payment_type=payment_type)
+    
+    if payment_type == "card":
+        current_details = ""
+        if method.get('payment_details'):
+            try:
+                details = json.loads(method['payment_details'])
+                cards = details.get('cards', [])
+                for i, card in enumerate(cards):
+                    if i > 0:
+                        current_details += "---\n"
+                    current_details += f"شماره کارت: {card.get('number', '')}\n"
+                    current_details += f"صاحب کارت: {card.get('holder', '')}\n"
+                    current_details += f"بانک: {card.get('bank', '')}\n"
+            except:
+                current_details = "خطا در خواندن اطلاعات فعلی"
+        
+        await callback.message.edit_text(
+            f"💳 **ویرایش اطلاعات کارت‌ها**\n\n"
+            f"📋 **اطلاعات فعلی:**\n"
+            f"```\n{current_details}\n```\n\n"
+            f"لطفاً اطلاعات جدید کارت‌ها را در فرمت زیر وارد کنید:\n\n"
+            f"```\n"
+            f"شماره کارت: 6037-9977-1234-5678\n"
+            f"صاحب کارت: احمد محمدی\n"
+            f"بانک: بانک ملی\n"
+            f"---\n"
+            f"شماره کارت: 6274-5588-9999-1111\n"
+            f"صاحب کارت: محمد احمدی\n"
+            f"بانک: بانک پاسارگاد\n"
+            f"```",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data=f"edit_payment_details_{payment_id}")]
+            ]),
+            parse_mode='Markdown'
+        )
+    else:  # crypto
+        current_details = ""
+        if method.get('payment_details'):
+            try:
+                details = json.loads(method['payment_details'])
+                wallets = details.get('wallets', [])
+                for i, wallet in enumerate(wallets):
+                    if i > 0:
+                        current_details += "---\n"
+                    current_details += f"ارز: {wallet.get('currency', '')}\n"
+                    current_details += f"آدرس: {wallet.get('address', '')}\n"
+            except:
+                current_details = "خطا در خواندن اطلاعات فعلی"
+        
+        await callback.message.edit_text(
+            f"🪙 **ویرایش آدرس کیف‌پول‌ها**\n\n"
+            f"📋 **اطلاعات فعلی:**\n"
+            f"```\n{current_details}\n```\n\n"
+            f"لطفاً آدرس‌های جدید کیف‌پول‌ها را در فرمت زیر وارد کنید:\n\n"
+            f"```\n"
+            f"ارز: USDT (TRC20)\n"
+            f"آدرس: TRX123456789abcdef...\n"
+            f"---\n"
+            f"ارز: Bitcoin\n"
+            f"آدرس: bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh\n"
+            f"```",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data=f"edit_payment_details_{payment_id}")]
+            ]),
+            parse_mode='Markdown'
+        )
+    
+    await state.set_state(SalesManagementStates.waiting_for_payment_edit_value)
     await callback.answer()
 
 @sales_router.callback_query(F.data.startswith("toggle_payment_"))
@@ -889,28 +1211,112 @@ async def process_payment_edit_value(message: Message, state: FSMContext):
         return
     
     try:
-        # Update the field in database
-        async with aiosqlite.connect(db.db_path) as database:
-            await database.execute(
-                f"UPDATE payment_methods SET {edit_field} = ? WHERE id = ?",
-                (new_value, payment_id)
+        if edit_field == "payment_details":
+            # Handle full payment details update
+            payment_type = data.get('payment_type', 'card')
+            
+            if payment_type == "card":
+                # Parse card details
+                cards = []
+                card_blocks = new_value.split('---')
+                
+                for block in card_blocks:
+                    block = block.strip()
+                    if not block:
+                        continue
+                    
+                    card_info = {}
+                    lines = block.split('\n')
+                    for line in lines:
+                        line = line.strip()
+                        if line.startswith('شماره کارت:'):
+                            card_info['number'] = line.replace('شماره کارت:', '').strip()
+                        elif line.startswith('صاحب کارت:'):
+                            card_info['holder'] = line.replace('صاحب کارت:', '').strip()
+                        elif line.startswith('بانک:'):
+                            card_info['bank'] = line.replace('بانک:', '').strip()
+                    
+                    if card_info.get('number') and card_info.get('holder') and card_info.get('bank'):
+                        cards.append(card_info)
+                
+                if not cards:
+                    await message.answer("❌ لطفاً حداقل یک کارت معتبر وارد کنید.")
+                    return
+                
+                payment_details = json.dumps({"cards": cards}, ensure_ascii=False)
+                
+            else:  # crypto
+                # Parse wallet details
+                wallets = []
+                wallet_blocks = new_value.split('---')
+                
+                for block in wallet_blocks:
+                    block = block.strip()
+                    if not block:
+                        continue
+                    
+                    wallet_info = {}
+                    lines = block.split('\n')
+                    for line in lines:
+                        line = line.strip()
+                        if line.startswith('ارز:'):
+                            wallet_info['currency'] = line.replace('ارز:', '').strip()
+                        elif line.startswith('آدرس:'):
+                            wallet_info['address'] = line.replace('آدرس:', '').strip()
+                    
+                    if wallet_info.get('currency') and wallet_info.get('address'):
+                        wallets.append(wallet_info)
+                
+                if not wallets:
+                    await message.answer("❌ لطفاً حداقل یک آدرس کیف‌پول معتبر وارد کنید.")
+                    return
+                
+                payment_details = json.dumps({"wallets": wallets}, ensure_ascii=False)
+            
+            # Update payment_details in database
+            async with aiosqlite.connect(db.db_path) as database:
+                await database.execute(
+                    "UPDATE payment_methods SET payment_details = ? WHERE id = ?",
+                    (payment_details, payment_id)
+                )
+                await database.commit()
+            
+            if payment_type == "card":
+                count = len(json.loads(payment_details)["cards"])
+                await message.answer(
+                    f"✅ **اطلاعات کارت‌ها بروزرسانی شد!**\n\n"
+                    f"🔢 **تعداد کارت:** {count} عدد"
+                )
+            else:
+                count = len(json.loads(payment_details)["wallets"])
+                await message.answer(
+                    f"✅ **آدرس کیف‌پول‌ها بروزرسانی شد!**\n\n"
+                    f"🔢 **تعداد آدرس:** {count} عدد"
+                )
+            
+        else:
+            # Handle single field update (legacy)
+            async with aiosqlite.connect(db.db_path) as database:
+                await database.execute(
+                    f"UPDATE payment_methods SET {edit_field} = ? WHERE id = ?",
+                    (new_value, payment_id)
+                )
+                await database.commit()
+            
+            field_names = {
+                'method_name': 'نام روش پرداخت',
+                'card_number': 'شماره کارت',
+                'card_holder_name': 'نام صاحب کارت',
+                'bank_name': 'نام بانک'
+            }
+            
+            field_display = field_names.get(edit_field, edit_field)
+            
+            await message.answer(
+                f"✅ {field_display} با موفقیت بروزرسانی شد.\n\n"
+                f"مقدار جدید: <code>{new_value}</code>",
+                parse_mode='HTML'
             )
-            await database.commit()
-        
-        field_names = {
-            'method_name': 'نام روش پرداخت',
-            'card_number': 'شماره کارت',
-            'card_holder_name': 'نام صاحب کارت',
-            'bank_name': 'نام بانک'
-        }
-        
-        field_display = field_names.get(edit_field, edit_field)
-        
-        await message.answer(
-            f"✅ {field_display} با موفقیت بروزرسانی شد.\n\n"
-            f"مقدار جدید: <code>{new_value}</code>",
-            parse_mode='HTML'
-        )
         
         await state.clear()
         
@@ -1462,11 +1868,80 @@ async def select_payment_method(callback: CallbackQuery, state: FSMContext):
     text += f"🆔 **شماره سفارش:** {order_id}\n"
     text += f"📦 **محصول:** {product['name']}\n"
     text += f"💰 **مبلغ:** {product['price']:,} {product['currency']}\n\n"
-    text += f"💳 **اطلاعات پرداخت:**\n"
-    text += f"🏦 {payment_method['bank_name']}\n"
-    text += f"💳 {payment_method['card_number']}\n"
-    text += f"👤 {payment_method['card_holder_name']}\n\n"
-    text += "📷 **لطفاً اسکرین شات واریز را ارسال کنید:**\n"
+    
+    # Display payment details based on type
+    payment_type = payment_method.get('payment_type', 'card')
+    
+    if payment_type == "card":
+        text += f"💳 **اطلاعات پرداخت کارت به کارت:**\n\n"
+        
+        if payment_method.get('payment_details'):
+            try:
+                details = json.loads(payment_method['payment_details'])
+                cards = details.get('cards', [])
+                
+                for i, card in enumerate(cards, 1):
+                    if len(cards) > 1:
+                        text += f"**💳 کارت {i}:**\n"
+                    
+                    from utils.helpers import format_card_info
+                    text += format_card_info(
+                        card.get('number', ''), 
+                        card.get('holder', ''), 
+                        card.get('bank', '')
+                    )
+                    if i < len(cards):
+                        text += "\n"
+                        
+            except:
+                # Fallback to legacy display
+                if payment_method.get('card_number'):
+                    from utils.helpers import format_card_info
+                    text += format_card_info(
+                        payment_method['card_number'],
+                        payment_method.get('card_holder_name', ''),
+                        payment_method.get('bank_name', '')
+                    )
+        elif payment_method.get('card_number'):
+            # Legacy data
+            from utils.helpers import format_card_info
+            text += format_card_info(
+                payment_method['card_number'],
+                payment_method.get('card_holder_name', ''),
+                payment_method.get('bank_name', '')
+            )
+            
+    else:  # crypto
+        text += f"🪙 **اطلاعات پرداخت ارز دیجیتال:**\n\n"
+        
+        if payment_method.get('payment_details'):
+            try:
+                details = json.loads(payment_method['payment_details'])
+                wallets = details.get('wallets', [])
+                
+                # Convert total price to USD for crypto
+                from utils.currency import convert_irr_to_usd, format_currency_info
+                usd_amount, exchange_rate = await convert_irr_to_usd(product['price'])
+                
+                text += format_currency_info(product['price'], usd_amount, exchange_rate)
+                text += "\n\n"
+                
+                for i, wallet in enumerate(wallets, 1):
+                    if len(wallets) > 1:
+                        text += f"**🪙 آدرس {i}:**\n"
+                    
+                    from utils.helpers import format_crypto_address
+                    text += format_crypto_address(
+                        wallet.get('currency', ''),
+                        wallet.get('address', '')
+                    )
+                    if i < len(wallets):
+                        text += "\n"
+                        
+            except Exception as e:
+                text += f"خطا در نمایش اطلاعات کیف‌پول: {str(e)}\n"
+    
+    text += "\n📷 **لطفاً اسکرین شات واریز را ارسال کنید:**\n"
     text += "پس از واریز مبلغ، تصویر رسید را در همین چت ارسال کنید.\n"
     text += "سفارش شما پس از تأیید ادمین پردازش خواهد شد."
     

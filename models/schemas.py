@@ -90,9 +90,11 @@ class SalesProductModel(BaseModel):
 class PaymentMethodModel(BaseModel):
     id: Optional[int] = None
     method_name: str
-    card_number: str
-    card_holder_name: str
-    bank_name: str
+    payment_type: str = "card"  # "card" or "crypto"
+    card_number: Optional[str] = None  # Legacy field, kept for compatibility
+    card_holder_name: Optional[str] = None  # Legacy field
+    bank_name: Optional[str] = None  # Legacy field
+    payment_details: Optional[str] = None  # JSON string for multiple cards/wallets
     is_active: bool = True
     created_at: Optional[datetime] = None
 

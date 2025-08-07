@@ -80,6 +80,17 @@ class Database:
                 await db.execute("ALTER TABLE admins ADD COLUMN deactivated_at TIMESTAMP")
             except aiosqlite.OperationalError:
                 pass  # Column already exists
+            
+            # Add new payment methods columns (migration)
+            try:
+                await db.execute("ALTER TABLE payment_methods ADD COLUMN payment_type TEXT DEFAULT 'card'")
+            except aiosqlite.OperationalError:
+                pass  # Column already exists
+                
+            try:
+                await db.execute("ALTER TABLE payment_methods ADD COLUMN payment_details TEXT")  # JSON field for multiple cards/wallets
+            except aiosqlite.OperationalError:
+                pass  # Column already exists
                 
             try:
                 await db.execute("ALTER TABLE admins ADD COLUMN deactivated_reason TEXT")
@@ -922,20 +933,34 @@ class Database:
             print(f"Error updating sales product: {e}")
             return False
 
-    async def add_payment_method(self, method_name: str, card_number: str, 
-                                card_holder_name: str, bank_name: str) -> bool:
-        """Add a new payment method."""
+    async def add_payment_method(self, method_name: str, payment_type: str, 
+                                payment_details: str, card_number: str = None, 
+                                card_holder_name: str = None, bank_name: str = None) -> bool:
+        """Add a new payment method with support for multiple cards/wallets."""
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("""
-                    INSERT INTO payment_methods (method_name, card_number, card_holder_name, bank_name)
-                    VALUES (?, ?, ?, ?)
-                """, (method_name, card_number, card_holder_name, bank_name))
+                    INSERT INTO payment_methods (method_name, payment_type, payment_details, 
+                                               card_number, card_holder_name, bank_name)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (method_name, payment_type, payment_details, card_number, card_holder_name, bank_name))
                 await db.commit()
                 return True
         except Exception as e:
             print(f"Error adding payment method: {e}")
             return False
+    
+    async def add_payment_method_legacy(self, method_name: str, card_number: str, 
+                                       card_holder_name: str, bank_name: str) -> bool:
+        """Legacy function for backward compatibility."""
+        return await self.add_payment_method(
+            method_name=method_name, 
+            payment_type="card",
+            payment_details=f'{{"cards": [{{"number": "{card_number}", "holder": "{card_holder_name}", "bank": "{bank_name}"}}]}}',
+            card_number=card_number,
+            card_holder_name=card_holder_name,
+            bank_name=bank_name
+        )
 
     async def get_payment_methods(self, active_only: bool = True):
         """Get all payment methods."""
