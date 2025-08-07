@@ -737,7 +737,6 @@ async def process_max_users(message: Message, state: FSMContext):
     # Log state change
     current_state = await state.get_state()
     logger.info(f"User {user_id} state changed to: {current_state}")
-        )
     except Exception as e:
         logger.error(f"Error processing max users from {user_id}: {e}")
         await message.answer(
