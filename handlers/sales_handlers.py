@@ -1932,8 +1932,8 @@ async def select_payment_method(callback: CallbackQuery, state: FSMContext):
                     
                     from utils.helpers import format_crypto_address
                     text += format_crypto_address(
-                        wallet.get('currency', ''),
-                        wallet.get('address', '')
+                        wallet.get('address', ''),
+                        wallet.get('currency', '')
                     )
                     if i < len(wallets):
                         text += "\n"
