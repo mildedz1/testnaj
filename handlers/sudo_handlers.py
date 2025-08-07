@@ -722,13 +722,6 @@ async def process_max_users(message: Message, state: FSMContext):
     # Log state change
     current_state = await state.get_state()
     logger.info(f"User {user_id} state changed to: {current_state}")
-    except Exception as e:
-        logger.error(f"Error processing max users from {user_id}: {e}")
-        await message.answer(
-            "❌ **خطا در پردازش تعداد کاربر**\n\n"
-            "لطفاً مجدداً تلاش کنید یا /start را بزنید."
-        )
-        await state.clear()
 
 
 @sudo_router.message(AddAdminStates.waiting_for_validity_period, F.text)
@@ -783,68 +776,53 @@ async def process_validity_period(message: Message, state: FSMContext):
             )
             return
         
-        # Save validity period to state data
-        await state.update_data(validity_days=validity_days, validity_seconds=validity_seconds)
-        
-        logger.info(f"User {user_id} entered validity period: {validity_days} days ({validity_seconds} seconds)")
-        
-        # Get all collected data for confirmation
-        data = await state.get_data()
-        admin_user_id = data.get("user_id")
-        admin_name = data.get("admin_name")
-        marzban_username = data.get("marzban_username")
-        traffic_gb = data.get("traffic_gb")
-        max_users = data.get("max_users")
-        
-        # Show confirmation with summary
-        traffic_display = "نامحدود" if traffic_gb == -1 else f"{traffic_gb} گیگابایت"
-        users_display = "نامحدود" if max_users == -1 else f"{max_users} کاربر"
-        validity_display = "نامحدود" if validity_days == -1 else f"{validity_days} روز"
-        
-        confirmation_text = (
-            "📋 **خلاصه اطلاعات ادمین جدید**\n\n"
-            f"👤 **User ID:** `{admin_user_id}`\n"
-            f"📝 **نام ادمین:** {admin_name}\n"
-            f"🔐 **Username مرزبان:** {marzban_username}\n"
-            f"📊 **حجم ترافیک:** {traffic_display}\n"
-            f"👥 **تعداد کاربر مجاز:** {users_display}\n"
-            f"📅 **مدت اعتبار:** {validity_display}\n\n"
-            "❓ **آیا اطلاعات صحیح است؟**\n\n"
-            "✅ برای **تایید و ایجاد ادمین** دکمه تایید را بزنید\n"
-            "❌ برای **لغو** دکمه لغو را بزنید"
-        )
-        
-        # Create confirmation keyboard
-        confirmation_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✅ تایید و ایجاد", callback_data="confirm_create_admin"),
-                InlineKeyboardButton(text="❌ لغو", callback_data="back_to_main")
-            ]
-        ])
-        
-        await message.answer(confirmation_text, reply_markup=confirmation_keyboard)
-        
-        # Change state to waiting for confirmation
-        await state.set_state(AddAdminStates.waiting_for_confirmation)
-        
-        # Log state change
-        current_state = await state.get_state()
-        logger.info(f"User {user_id} state changed to: {current_state}")
-        
-    except ValueError:
-        logger.warning(f"User {user_id} entered invalid validity period: {message.text}")
-        await message.answer(
-            "❌ **فرمت مدت اعتبار اشتباه است!**\n\n"
-            "🔢 لطفاً تعداد روز را به عدد صحیح وارد کنید.\n"
-            "📋 **مثال:** `30` یا `90`"
-        )
-    except Exception as e:
-        logger.error(f"Error processing validity period from {user_id}: {e}")
-        await message.answer(
-            "❌ **خطا در پردازش مدت اعتبار**\n\n"
-            "لطفاً مجدداً تلاش کنید یا /start را بزنید."
-        )
-        await state.clear()
+    # Save validity period to state data
+    await state.update_data(validity_days=validity_days, validity_seconds=validity_seconds)
+    
+    logger.info(f"User {user_id} entered validity period: {validity_days} days ({validity_seconds} seconds)")
+    
+    # Get all collected data for confirmation
+    data = await state.get_data()
+    admin_user_id = data.get("user_id")
+    admin_name = data.get("admin_name")
+    marzban_username = data.get("marzban_username")
+    traffic_gb = data.get("traffic_gb")
+    max_users = data.get("max_users")
+    
+    # Show confirmation with summary
+    traffic_display = "نامحدود" if traffic_gb == -1 else f"{traffic_gb} گیگابایت"
+    users_display = "نامحدود" if max_users == -1 else f"{max_users} کاربر"
+    validity_display = "نامحدود" if validity_days == -1 else f"{validity_days} روز"
+    
+    confirmation_text = (
+        "📋 **خلاصه اطلاعات ادمین جدید**\n\n"
+        f"👤 **User ID:** `{admin_user_id}`\n"
+        f"📝 **نام ادمین:** {admin_name}\n"
+        f"🔐 **Username مرزبان:** {marzban_username}\n"
+        f"📊 **حجم ترافیک:** {traffic_display}\n"
+        f"👥 **تعداد کاربر مجاز:** {users_display}\n"
+        f"📅 **مدت اعتبار:** {validity_display}\n\n"
+        "❓ **آیا اطلاعات صحیح است؟**\n\n"
+        "✅ برای **تایید و ایجاد ادمین** دکمه تایید را بزنید\n"
+        "❌ برای **لغو** دکمه لغو را بزنید"
+    )
+    
+    # Create confirmation keyboard
+    confirmation_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ تایید و ایجاد", callback_data="confirm_create_admin"),
+            InlineKeyboardButton(text="❌ لغو", callback_data="back_to_main")
+        ]
+    ])
+    
+    await message.answer(confirmation_text, reply_markup=confirmation_keyboard)
+    
+    # Change state to waiting for confirmation
+    await state.set_state(AddAdminStates.waiting_for_confirmation)
+    
+    # Log state change
+    current_state = await state.get_state()
+    logger.info(f"User {user_id} state changed to: {current_state}")
 
 
 @sudo_router.callback_query(F.data == "confirm_create_admin")
