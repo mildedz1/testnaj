@@ -29,6 +29,7 @@ class SalesManagementStates(StatesGroup):
     waiting_for_card_number = State()
     waiting_for_card_holder = State()
     waiting_for_bank_name = State()
+    waiting_for_product_edit_value = State()
 
 # FSM States for customer purchase
 class PurchaseStates(StatesGroup):
@@ -136,11 +137,23 @@ async def manage_products_menu(callback: CallbackQuery):
     else:
         text += "هیچ محصولی تعریف نشده است.\n\n"
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ افزودن محصول", callback_data="add_product")],
-        [InlineKeyboardButton(text="✏️ ویرایش محصول", callback_data="edit_product")] if products else [],
-        [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="sales_management")]
-    ])
+    buttons = []
+    buttons.append([InlineKeyboardButton(text="➕ افزودن محصول", callback_data="add_product")])
+    
+    if products:
+        buttons.append([InlineKeyboardButton(text="✏️ ویرایش محصول", callback_data="edit_product")])
+        # Add individual edit buttons for each product
+        for product in products[:5]:  # Limit to 5 products to avoid button overflow
+            status_emoji = "✅" if product['is_active'] else "❌"
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"{status_emoji} ویرایش: {product['name']}",
+                    callback_data=f"edit_product_{product['id']}"
+                )
+            ])
+    
+    buttons.append([InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="sales_management")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
@@ -550,6 +563,211 @@ async def add_payment_bank_name(message: Message, state: FSMContext):
     
     await state.clear()
 
+# ============= PRODUCT EDITING =============
+
+@sales_router.callback_query(F.data.startswith("edit_product_"))
+async def edit_specific_product(callback: CallbackQuery, state: FSMContext):
+    """Handle editing a specific product."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    product_id = int(callback.data.split("_")[2])
+    products = await db.get_sales_products(active_only=False)
+    product = next((p for p in products if p['id'] == product_id), None)
+    
+    if not product:
+        await callback.answer("محصول یافت نشد.", show_alert=True)
+        return
+    
+    status_text = "فعال" if product['is_active'] else "غیرفعال"
+    status_emoji = "✅" if product['is_active'] else "❌"
+    
+    text = f"✏️ **ویرایش محصول**\n\n"
+    text += f"📦 **نام:** {product['name']}\n"
+    text += f"💰 **قیمت:** {product['price']:,} {product['currency']}\n"
+    text += f"👥 **کاربران:** {product['max_users']}\n"
+    text += f"📊 **ترافیک:** {product['max_traffic'] // (1024**3)}GB\n"
+    text += f"⏱️ **زمان:** {product['max_time'] // (24*3600)} روز\n"
+    text += f"📅 **اعتبار:** {product['validity_days']} روز\n"
+    text += f"📝 **توضیحات:** {product['description'] or 'ندارد'}\n"
+    text += f"📊 **وضعیت:** {status_emoji} {status_text}\n\n"
+    text += "چه قسمتی را می‌خواهید ویرایش کنید؟"
+    
+    buttons = [
+        [
+            InlineKeyboardButton(text="✏️ نام", callback_data=f"edit_field_name_{product_id}"),
+            InlineKeyboardButton(text="💰 قیمت", callback_data=f"edit_field_price_{product_id}")
+        ],
+        [
+            InlineKeyboardButton(text="👥 کاربران", callback_data=f"edit_field_users_{product_id}"),
+            InlineKeyboardButton(text="📊 ترافیک", callback_data=f"edit_field_traffic_{product_id}")
+        ],
+        [
+            InlineKeyboardButton(text="⏱️ زمان", callback_data=f"edit_field_time_{product_id}"),
+            InlineKeyboardButton(text="📝 توضیحات", callback_data=f"edit_field_description_{product_id}")
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"{'❌ غیرفعال کردن' if product['is_active'] else '✅ فعال کردن'}",
+                callback_data=f"toggle_product_{product_id}"
+            )
+        ],
+        [
+            InlineKeyboardButton(text="🗑️ حذف محصول", callback_data=f"delete_product_{product_id}"),
+            InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="manage_products")
+        ]
+    ]
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await callback.answer()
+
+@sales_router.callback_query(F.data.startswith("toggle_product_"))
+async def toggle_product_status(callback: CallbackQuery):
+    """Toggle product active status."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    product_id = int(callback.data.split("_")[2])
+    products = await db.get_sales_products(active_only=False)
+    product = next((p for p in products if p['id'] == product_id), None)
+    
+    if not product:
+        await callback.answer("محصول یافت نشد.", show_alert=True)
+        return
+    
+    new_status = not product['is_active']
+    success = await db.update_sales_product(product_id, is_active=new_status)
+    
+    if success:
+        status_text = "فعال" if new_status else "غیرفعال"
+        await callback.answer(f"وضعیت محصول به {status_text} تغییر یافت.", show_alert=True)
+        # Refresh the edit page
+        await edit_specific_product(callback, None)
+    else:
+        await callback.answer("خطا در تغییر وضعیت محصول.", show_alert=True)
+
+@sales_router.callback_query(F.data.startswith("edit_field_"))
+async def edit_product_field(callback: CallbackQuery, state: FSMContext):
+    """Handle editing a specific field of a product."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    parts = callback.data.split("_")
+    field = parts[2]
+    product_id = int(parts[3])
+    
+    await state.update_data(edit_product_id=product_id, edit_field=field)
+    
+    field_names = {
+        "name": "نام محصول",
+        "price": "قیمت (به تومان)",
+        "users": "تعداد کاربران",
+        "traffic": "حجم ترافیک (به گیگابایت)",
+        "time": "مدت زمان (به روز)",
+        "description": "توضیحات محصول"
+    }
+    
+    field_name = field_names.get(field, field)
+    
+    await callback.message.edit_text(
+        f"✏️ **ویرایش {field_name}**\n\n"
+        f"مقدار جدید را وارد کنید:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data=f"edit_product_{product_id}")]
+        ])
+    )
+    
+    await state.set_state(SalesManagementStates.waiting_for_product_edit_value)
+    await callback.answer()
+
+@sales_router.message(SalesManagementStates.waiting_for_product_edit_value, F.text)
+async def product_edit_value_received(message: Message, state: FSMContext):
+    """Handle new value for product field."""
+    if message.from_user.id not in config.SUDO_ADMINS:
+        return
+    
+    data = await state.get_data()
+    product_id = data.get('edit_product_id')
+    field = data.get('edit_field')
+    new_value = message.text.strip()
+    
+    if not product_id or not field:
+        await message.answer("خطا در دریافت اطلاعات ویرایش.")
+        await state.clear()
+        return
+    
+    try:
+        # Validate and convert values
+        update_data = {}
+        
+        if field == "name":
+            if len(new_value) < 2:
+                await message.answer("❌ نام محصول باید حداقل ۲ کاراکتر باشد.")
+                return
+            update_data['name'] = new_value
+            
+        elif field == "price":
+            price = int(new_value)
+            if price < 1000:
+                await message.answer("❌ قیمت باید حداقل ۱۰۰۰ تومان باشد.")
+                return
+            update_data['price'] = price
+            
+        elif field == "users":
+            users = int(new_value)
+            if users < 1:
+                await message.answer("❌ تعداد کاربران باید حداقل ۱ باشد.")
+                return
+            update_data['max_users'] = users
+            
+        elif field == "traffic":
+            traffic_gb = float(new_value)
+            if traffic_gb < 0.1:
+                await message.answer("❌ حجم ترافیک باید حداقل ۰.۱ گیگابایت باشد.")
+                return
+            update_data['max_traffic'] = int(traffic_gb * 1024 * 1024 * 1024)
+            
+        elif field == "time":
+            days = int(new_value)
+            if days < 1:
+                await message.answer("❌ مدت زمان باید حداقل ۱ روز باشد.")
+                return
+            update_data['max_time'] = days * 24 * 3600
+            update_data['validity_days'] = days
+            
+        elif field == "description":
+            update_data['description'] = new_value
+        
+        # Update the product
+        success = await db.update_sales_product(product_id, **update_data)
+        
+        if success:
+            await message.answer(
+                "✅ محصول با موفقیت بروزرسانی شد!",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📦 مدیریت محصولات", callback_data="manage_products")],
+                    [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="sales_management")]
+                ])
+            )
+            logger.info(f"Product {product_id} field {field} updated to {new_value} by admin {message.from_user.id}")
+        else:
+            await message.answer("❌ خطا در بروزرسانی محصول.")
+            
+    except ValueError:
+        await message.answer("❌ مقدار وارد شده نامعتبر است. لطفاً عدد صحیح وارد کنید.")
+        return
+    except Exception as e:
+        logger.error(f"Error updating product field: {e}")
+        await message.answer("❌ خطا در بروزرسانی محصول.")
+    
+    await state.clear()
+
 # ============= CUSTOMER PURCHASE INTERFACE =============
 
 @sales_router.callback_query(F.data == "buy_panel")
@@ -569,23 +787,29 @@ async def show_products_for_purchase(callback: CallbackQuery):
         await callback.answer()
         return
     
-    text = "🛒 **فروشگاه پنل**\n\n"
-    text += "محصولات موجود برای خرید:\n\n"
+    text = "🛒 **فروشگاه پنل مرزبان**\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    text += "💎 **محصولات موجود برای خرید:**\n\n"
     
     buttons = []
-    for product in products:
-        text += f"📦 **{product['name']}**\n"
-        text += f"💰 قیمت: {product['price']:,} {product['currency']}\n"
-        text += f"👥 کاربران: {product['max_users']} | "
-        text += f"📊 ترافیک: {product['max_traffic'] // (1024**3)}GB | "
-        text += f"⏱️ زمان: {product['max_time'] // (24*3600)} روز\n"
+    for i, product in enumerate(products, 1):
+        # Create attractive product display
+        text += f"🔥 **پکیج {i}: {product['name']}**\n"
+        text += f"┏━━━━━━━━━━━━━━━━━━━━━━━\n"
+        text += f"┃ 💰 **قیمت:** {product['price']:,} {product['currency']}\n"
+        text += f"┃ 👥 **کاربران:** {product['max_users']} نفر\n"
+        text += f"┃ 📊 **ترافیک:** {product['max_traffic'] // (1024**3)} گیگابایت\n"
+        text += f"┃ ⏱️ **مدت زمان:** {product['max_time'] // (24*3600)} روز\n"
+        text += f"┃ 📅 **اعتبار:** {product['validity_days']} روز\n"
         if product['description']:
-            text += f"📝 {product['description']}\n"
-        text += "\n"
+            text += f"┃ 📝 **توضیحات:** {product['description']}\n"
+        text += f"┗━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         
+        # Make button more attractive
+        button_text = f"🛒 انتخاب {product['name']} | {product['price']:,} تومان"
         buttons.append([
             InlineKeyboardButton(
-                text=f"🛒 خرید {product['name']} - {product['price']:,} تومان",
+                text=button_text,
                 callback_data=f"select_product_{product['id']}"
             )
         ])
@@ -640,19 +864,51 @@ async def select_product_for_purchase(callback: CallbackQuery, state: FSMContext
     if product['description']:
         text += f"📝 **توضیحات:** {product['description']}\n\n"
     
-    text += "💳 **انتخاب روش پرداخت:**\n\n"
+    text += "💳 **انتخاب روش پرداخت:**\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    # Group payment methods by type
+    card_methods = []
+    crypto_methods = []
+    
+    for method in payment_methods:
+        method_name_lower = method['method_name'].lower()
+        if any(crypto in method_name_lower for crypto in ['usdt', 'btc', 'eth', 'ترون', 'تتر', 'بیت', 'اتریوم', 'crypto', 'کریپتو']):
+            crypto_methods.append(method)
+        else:
+            card_methods.append(method)
     
     buttons = []
-    for method in payment_methods:
-        text += f"• **{method['method_name']}**\n"
-        text += f"  💳 {method['card_number']}\n"
-        text += f"  👤 {method['card_holder_name']}\n"
-        text += f"  🏦 {method['bank_name']}\n\n"
+    
+    # Show card-to-card option if available
+    if card_methods:
+        text += "💳 **کارت به کارت:**\n"
+        for method in card_methods:
+            text += f"┃ 🏦 {method['bank_name']}\n"
+            text += f"┃ 💳 {method['card_number']}\n"
+            text += f"┃ 👤 {method['card_holder_name']}\n"
+        text += "\n"
         
         buttons.append([
             InlineKeyboardButton(
-                text=f"💳 {method['method_name']}",
-                callback_data=f"select_payment_{method['id']}"
+                text="💳 پرداخت کارت به کارت",
+                callback_data="payment_type_card"
+            )
+        ])
+    
+    # Show crypto option if available
+    if crypto_methods:
+        text += "🪙 **ارزهای دیجیتال:**\n"
+        for method in crypto_methods:
+            text += f"┃ 🪙 {method['method_name']}\n"
+            if method['card_number']:  # Use as wallet address
+                text += f"┃ 📍 {method['card_number']}\n"
+        text += "\n"
+        
+        buttons.append([
+            InlineKeyboardButton(
+                text="🪙 پرداخت با ارز دیجیتال",
+                callback_data="payment_type_crypto"
             )
         ])
     
@@ -660,6 +916,106 @@ async def select_product_for_purchase(callback: CallbackQuery, state: FSMContext
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     
     await callback.message.edit_text(text, reply_markup=keyboard)
+    await callback.answer()
+
+@sales_router.callback_query(F.data.startswith("payment_type_"))
+async def select_payment_type(callback: CallbackQuery, state: FSMContext):
+    """Handle payment type selection (card vs crypto)."""
+    payment_type = callback.data.split("_")[2]  # card or crypto
+    
+    # Get product from state
+    data = await state.get_data()
+    product = data.get('selected_product')
+    
+    if not product:
+        await callback.answer("خطا در دریافت اطلاعات محصول.", show_alert=True)
+        return
+    
+    # Get appropriate payment methods
+    payment_methods = await db.get_payment_methods(active_only=True)
+    
+    if payment_type == "card":
+        methods = [m for m in payment_methods if not any(crypto in m['method_name'].lower() 
+                  for crypto in ['usdt', 'btc', 'eth', 'ترون', 'تتر', 'بیت', 'اتریوم', 'crypto', 'کریپتو'])]
+        type_name = "کارت به کارت"
+        type_emoji = "💳"
+    else:  # crypto
+        methods = [m for m in payment_methods if any(crypto in m['method_name'].lower() 
+                  for crypto in ['usdt', 'btc', 'eth', 'ترون', 'تتر', 'بیت', 'اتریوم', 'crypto', 'کریپتو'])]
+        type_name = "ارز دیجیتال"
+        type_emoji = "🪙"
+    
+    if not methods:
+        await callback.answer("روش پرداخت یافت نشد.", show_alert=True)
+        return
+    
+    # For now, use the first method of selected type
+    selected_method = methods[0]
+    
+    # Create order
+    product_snapshot = json.dumps(product)
+    order_id = await db.create_sales_order(
+        customer_user_id=callback.from_user.id,
+        customer_username=callback.from_user.username,
+        customer_first_name=callback.from_user.first_name,
+        customer_last_name=callback.from_user.last_name,
+        product_id=product['id'],
+        total_price=product['price'],
+        product_snapshot=product_snapshot
+    )
+    
+    if order_id == 0:
+        await callback.answer("خطا در ثبت سفارش.", show_alert=True)
+        return
+    
+    # Store order info in state
+    await state.update_data(
+        order_id=order_id,
+        payment_method_id=selected_method['id'],
+        payment_method=selected_method,
+        payment_type=payment_type
+    )
+    
+    # Show payment instructions
+    if payment_type == "card":
+        instructions = (
+            f"💳 **اطلاعات پرداخت کارت به کارت:**\n\n"
+            f"🏦 **بانک:** {selected_method['bank_name']}\n"
+            f"💳 **شماره کارت:** `{selected_method['card_number']}`\n"
+            f"👤 **صاحب حساب:** {selected_method['card_holder_name']}\n\n"
+            f"💰 **مبلغ قابل پرداخت:** {product['price']:,} تومان\n\n"
+            f"📝 **مراحل پرداخت:**\n"
+            f"1️⃣ مبلغ را به شماره کارت بالا واریز کنید\n"
+            f"2️⃣ اسکرین‌شات رسید واریز را در همین چت ارسال کنید\n"
+            f"3️⃣ منتظر تأیید ادمین باشید (حداکثر ۲۴ ساعت)"
+        )
+    else:  # crypto
+        instructions = (
+            f"🪙 **اطلاعات پرداخت ارز دیجیتال:**\n\n"
+            f"💎 **ارز:** {selected_method['method_name']}\n"
+            f"📍 **آدرس کیف پول:** `{selected_method['card_number']}`\n\n"
+            f"💰 **مبلغ:** {product['price']:,} تومان معادل ارز\n\n"
+            f"📝 **مراحل پرداخت:**\n"
+            f"1️⃣ معادل مبلغ را به آدرس بالا ارسال کنید\n"
+            f"2️⃣ اسکرین‌شات تراکنش را در همین چت ارسال کنید\n"
+            f"3️⃣ منتظر تأیید ادمین باشید (حداکثر ۲۴ ساعت)\n\n"
+            f"⚠️ **توجه:** نرخ ارز در زمان پرداخت محاسبه می‌شود"
+        )
+    
+    text = f"✅ **سفارش ثبت شد**\n\n"
+    text += f"🆔 **شماره سفارش:** {order_id}\n"
+    text += f"📦 **محصول:** {product['name']}\n\n"
+    text += instructions
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ لغو سفارش", callback_data=f"cancel_order_{order_id}")],
+            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="buy_panel")]
+        ])
+    )
+    
+    await state.set_state(PurchaseStates.waiting_for_payment_screenshot)
     await callback.answer()
 
 @sales_router.callback_query(F.data.startswith("select_payment_"))
@@ -996,22 +1352,43 @@ async def approve_order_and_create_panel(callback: CallbackQuery):
                 logger.error(f"Failed to notify customer {order['customer_user_id']}: {e}")
             
             # Notify admin about successful approval
-            await callback.message.edit_text(
-                f"✅ **سفارش تأیید شد**\n\n"
-                f"🆔 سفارش #{order_id} با موفقیت تأیید شد.\n"
-                f"👤 مشتری: {order['customer_first_name']} (@{order['customer_username']})\n"
-                f"📦 محصول: {order['product_name']}\n"
-                f"💰 مبلغ: {order['total_price']:,} تومان\n\n"
-                f"🔐 **پنل ایجاد شده:**\n"
-                f"👤 نام کاربری: {marzban_username}\n"
-                f"🔑 رمز عبور: {marzban_password}\n"
-                f"🆔 ID پنل: {admin_id}\n\n"
-                f"📩 اطلاعات برای مشتری ارسال شد.",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="📋 سفارشات در انتظار", callback_data="pending_orders")],
-                    [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="sales_management")]
-                ])
-            )
+            try:
+                await callback.message.edit_text(
+                    f"✅ **سفارش تأیید شد**\n\n"
+                    f"🆔 سفارش #{order_id} با موفقیت تأیید شد.\n"
+                    f"👤 مشتری: {order['customer_first_name']} (@{order['customer_username']})\n"
+                    f"📦 محصول: {order['product_name']}\n"
+                    f"💰 مبلغ: {order['total_price']:,} تومان\n\n"
+                    f"🔐 **پنل ایجاد شده:**\n"
+                    f"👤 نام کاربری: {marzban_username}\n"
+                    f"🔑 رمز عبور: {marzban_password}\n"
+                    f"🆔 ID پنل: {admin_id}\n\n"
+                    f"📩 اطلاعات برای مشتری ارسال شد.",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="📋 سفارشات در انتظار", callback_data="pending_orders")],
+                        [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="sales_management")]
+                    ])
+                )
+            except Exception as edit_error:
+                # If edit fails, send new message
+                logger.warning(f"Failed to edit message, sending new one: {edit_error}")
+                await callback.message.bot.send_message(
+                    chat_id=callback.message.chat.id,
+                    text=f"✅ **سفارش تأیید شد**\n\n"
+                         f"🆔 سفارش #{order_id} با موفقیت تأیید شد.\n"
+                         f"👤 مشتری: {order['customer_first_name']} (@{order['customer_username']})\n"
+                         f"📦 محصول: {order['product_name']}\n"
+                         f"💰 مبلغ: {order['total_price']:,} تومان\n\n"
+                         f"🔐 **پنل ایجاد شده:**\n"
+                         f"👤 نام کاربری: {marzban_username}\n"
+                         f"🔑 رمز عبور: {marzban_password}\n"
+                         f"🆔 ID پنل: {admin_id}\n\n"
+                         f"📩 اطلاعات برای مشتری ارسال شد.",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="📋 سفارشات در انتظار", callback_data="pending_orders")],
+                        [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="sales_management")]
+                    ])
+                )
             
             logger.info(f"Order {order_id} approved and panel {admin_id} created for user {order['customer_user_id']}")
             
