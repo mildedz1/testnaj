@@ -1395,7 +1395,7 @@ async def approve_order_and_create_panel(callback: CallbackQuery):
                          f"🆔 **شماره سفارش:** {order_id}\n"
                          f"📦 **محصول:** {order['product_name']}\n\n"
                          f"🔐 **اطلاعات ورود به پنل مرزبان:**\n"
-                         f"🌐 **آدرس پنل:** `{config.MARZBAN_URL}/dashboard`\n"
+                         f"🌐 **آدرس پنل:** {config.MARZBAN_URL}/dashboard\n"
                          f"👤 **نام کاربری:** `{marzban_username}`\n"
                          f"🔑 **رمز عبور:** `{marzban_password}`\n\n"
                          f"📋 **مشخصات پنل:**\n"
