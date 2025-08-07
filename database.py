@@ -201,6 +201,26 @@ class Database:
                 )
             """)
 
+            # Create extension requests table
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS extension_requests (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    admin_id INTEGER NOT NULL,
+                    admin_user_id INTEGER NOT NULL,
+                    request_type TEXT NOT NULL,
+                    requested_amount INTEGER NOT NULL,
+                    total_price INTEGER NOT NULL,
+                    payment_method_id INTEGER,
+                    payment_screenshot_file_id TEXT,
+                    status TEXT DEFAULT 'pending',
+                    admin_notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    processed_at TIMESTAMP,
+                    FOREIGN KEY (admin_id) REFERENCES admins(id),
+                    FOREIGN KEY (payment_method_id) REFERENCES payment_methods(id)
+                )
+            """)
+
             # Initialize cumulative traffic tracking for existing admins
             await self._initialize_cumulative_tracking_for_existing_admins(db)
 
@@ -1046,6 +1066,102 @@ class Database:
                     return None
         except Exception as e:
             print(f"Error getting admin by marzban username: {e}")
+            return None
+
+    # Extension Requests Functions
+    
+    async def create_extension_request(self, admin_id: int, admin_user_id: int, 
+                                     request_type: str, requested_amount: int, total_price: int) -> int:
+        """Create a new extension request."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute("""
+                    INSERT INTO extension_requests (admin_id, admin_user_id, request_type, requested_amount, total_price)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (admin_id, admin_user_id, request_type, requested_amount, total_price))
+                request_id = cursor.lastrowid
+                await db.commit()
+                return request_id
+        except Exception as e:
+            print(f"Error creating extension request: {e}")
+            return 0
+
+    async def update_extension_request_payment(self, request_id: int, payment_method_id: int, screenshot_file_id: str) -> bool:
+        """Update extension request with payment information."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    UPDATE extension_requests SET payment_method_id = ?, payment_screenshot_file_id = ?
+                    WHERE id = ?
+                """, (payment_method_id, screenshot_file_id, request_id))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error updating extension request payment: {e}")
+            return False
+
+    async def get_pending_extension_requests(self):
+        """Get all pending extension requests for admin review."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute("""
+                    SELECT er.*, a.admin_name, a.marzban_username, pm.method_name, pm.card_number
+                    FROM extension_requests er
+                    LEFT JOIN admins a ON er.admin_id = a.id
+                    LEFT JOIN payment_methods pm ON er.payment_method_id = pm.id
+                    WHERE er.status = 'pending'
+                    ORDER BY er.created_at ASC
+                """) as cursor:
+                    rows = await cursor.fetchall()
+                    return [dict(row) for row in rows]
+        except Exception as e:
+            print(f"Error getting pending extension requests: {e}")
+            return []
+
+    async def approve_extension_request(self, request_id: int) -> bool:
+        """Approve an extension request."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    UPDATE extension_requests SET status = 'approved', processed_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (request_id,))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error approving extension request: {e}")
+            return False
+
+    async def reject_extension_request(self, request_id: int, admin_notes: str) -> bool:
+        """Reject an extension request with notes."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("""
+                    UPDATE extension_requests SET status = 'rejected', admin_notes = ?, processed_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (admin_notes, request_id))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Error rejecting extension request: {e}")
+            return False
+
+    async def get_extension_request_by_id(self, request_id: int):
+        """Get extension request details by ID."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute("""
+                    SELECT er.*, a.admin_name, a.marzban_username, a.max_users, a.max_total_traffic, a.max_total_time
+                    FROM extension_requests er
+                    LEFT JOIN admins a ON er.admin_id = a.id
+                    WHERE er.id = ?
+                """, (request_id,)) as cursor:
+                    row = await cursor.fetchone()
+                    return dict(row) if row else None
+        except Exception as e:
+            print(f"Error getting extension request by ID: {e}")
             return None
 
     async def close(self):

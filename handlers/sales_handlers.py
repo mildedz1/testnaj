@@ -277,14 +277,19 @@ async def add_product_users(message: Message, state: FSMContext):
     if message.from_user.id not in config.SUDO_ADMINS:
         return
     
-    try:
-        max_users = int(message.text.strip())
-        if max_users < 1:
-            await message.answer("❌ تعداد کاربران باید حداقل ۱ باشد.")
+    user_input = message.text.strip().lower()
+    
+    if user_input in ['نامحدود', 'unlimited', '-1', '0']:
+        max_users = -1  # -1 indicates unlimited
+    else:
+        try:
+            max_users = int(user_input)
+            if max_users < 1:
+                await message.answer("❌ تعداد کاربران باید حداقل ۱ باشد یا 'نامحدود' بنویسید.")
+                return
+        except ValueError:
+            await message.answer("❌ لطفاً عدد صحیح وارد کنید یا 'نامحدود' بنویسید.")
             return
-    except ValueError:
-        await message.answer("❌ لطفاً عدد صحیح وارد کنید.")
-        return
     
     await state.update_data(max_users=max_users)
     
@@ -306,16 +311,21 @@ async def add_product_traffic(message: Message, state: FSMContext):
     if message.from_user.id not in config.SUDO_ADMINS:
         return
     
-    try:
-        traffic_gb = float(message.text.strip())
-        if traffic_gb < 0.1:
-            await message.answer("❌ حجم ترافیک باید حداقل ۰.۱ گیگابایت باشد.")
+    traffic_input = message.text.strip().lower()
+    
+    if traffic_input in ['نامحدود', 'unlimited', '-1', '0']:
+        traffic_bytes = -1  # -1 indicates unlimited
+    else:
+        try:
+            traffic_gb = float(traffic_input)
+            if traffic_gb < 0.1:
+                await message.answer("❌ حجم ترافیک باید حداقل ۰.۱ گیگابایت باشد یا 'نامحدود' بنویسید.")
+                return
+            
+            traffic_bytes = int(traffic_gb * 1024 * 1024 * 1024)
+        except ValueError:
+            await message.answer("❌ لطفاً عدد معتبر وارد کنید یا 'نامحدود' بنویسید.")
             return
-        
-        traffic_bytes = int(traffic_gb * 1024 * 1024 * 1024)
-    except ValueError:
-        await message.answer("❌ لطفاً عدد معتبر وارد کنید.")
-        return
     
     await state.update_data(max_traffic=traffic_bytes)
     
@@ -337,16 +347,22 @@ async def add_product_time(message: Message, state: FSMContext):
     if message.from_user.id not in config.SUDO_ADMINS:
         return
     
-    try:
-        time_days = int(message.text.strip())
-        if time_days < 1:
-            await message.answer("❌ مدت زمان باید حداقل ۱ روز باشد.")
+    time_input = message.text.strip().lower()
+    
+    if time_input in ['نامحدود', 'unlimited', '-1', '0']:
+        time_seconds = -1  # -1 indicates unlimited
+        time_days = -1
+    else:
+        try:
+            time_days = int(time_input)
+            if time_days < 1:
+                await message.answer("❌ مدت زمان باید حداقل ۱ روز باشد یا 'نامحدود' بنویسید.")
+                return
+            
+            time_seconds = time_days * 24 * 3600
+        except ValueError:
+            await message.answer("❌ لطفاً عدد صحیح وارد کنید یا 'نامحدود' بنویسید.")
             return
-        
-        time_seconds = time_days * 24 * 3600
-    except ValueError:
-        await message.answer("❌ لطفاً عدد صحیح وارد کنید.")
-        return
     
     # Get all data from state
     data = await state.get_data()
@@ -797,10 +813,17 @@ async def show_products_for_purchase(callback: CallbackQuery):
         text += f"🔥 **پکیج {i}: {product['name']}**\n"
         text += f"┏━━━━━━━━━━━━━━━━━━━━━━━\n"
         text += f"┃ 💰 **قیمت:** {product['price']:,} {product['currency']}\n"
-        text += f"┃ 👥 **کاربران:** {product['max_users']} نفر\n"
-        text += f"┃ 📊 **ترافیک:** {product['max_traffic'] // (1024**3)} گیگابایت\n"
-        text += f"┃ ⏱️ **مدت زمان:** {product['max_time'] // (24*3600)} روز\n"
-        text += f"┃ 📅 **اعتبار:** {product['validity_days']} روز\n"
+        
+        # Handle unlimited values
+        users_display = "نامحدود" if product['max_users'] == -1 else f"{product['max_users']} نفر"
+        traffic_display = "نامحدود" if product['max_traffic'] == -1 else f"{product['max_traffic'] // (1024**3)} گیگابایت"
+        time_display = "نامحدود" if product['max_time'] == -1 else f"{product['max_time'] // (24*3600)} روز"
+        validity_display = "نامحدود" if product['validity_days'] == -1 else f"{product['validity_days']} روز"
+        
+        text += f"┃ 👥 **کاربران:** {users_display}\n"
+        text += f"┃ 📊 **ترافیک:** {traffic_display}\n"
+        text += f"┃ ⏱️ **مدت زمان:** {time_display}\n"
+        text += f"┃ 📅 **اعتبار:** {validity_display}\n"
         if product['description']:
             text += f"┃ 📝 **توضیحات:** {product['description']}\n"
         text += f"┗━━━━━━━━━━━━━━━━━━━━━━━\n\n"

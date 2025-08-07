@@ -30,7 +30,8 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=config.BUTTONS["reactivate_users"], callback_data="reactivate_users")
         ],
         [
-            InlineKeyboardButton(text="🛒 خرید پنل", callback_data="buy_panel")
+            InlineKeyboardButton(text="🛒 خرید پنل", callback_data="buy_panel"),
+            InlineKeyboardButton(text="📈 درخواست تمدید", callback_data="request_extension")
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
