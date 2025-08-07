@@ -13,6 +13,7 @@ from aiogram.fsm.state import State, StatesGroup
 import config
 from database import db
 from models.schemas import AdminModel, SalesProductModel, PaymentMethodModel, SalesOrderModel
+from utils.helpers import safe_callback_answer, truncate_error
 import logging
 
 logger = logging.getLogger(__name__)
@@ -1299,9 +1300,10 @@ async def show_payment_receipt(callback: CallbackQuery):
                 ]
             ])
         )
-        await callback.answer()
-    except Exception as e:
-        await callback.answer(f"خطا در نمایش رسید: {str(e)}", show_alert=True)
+                  await callback.answer()
+      except Exception as e:
+          error_msg = truncate_error(e)
+          await safe_callback_answer(callback, f"خطا در نمایش رسید: {error_msg}", show_alert=True)
 
 @sales_router.callback_query(F.data.startswith("approve_order_"))
 async def approve_order_and_create_panel(callback: CallbackQuery):
@@ -1450,7 +1452,8 @@ async def approve_order_and_create_panel(callback: CallbackQuery):
             
     except Exception as e:
         logger.error(f"Error approving order {order_id}: {e}")
-        await callback.answer(f"خطا در تأیید سفارش: {str(e)}", show_alert=True)
+        error_msg = truncate_error(e)
+        await safe_callback_answer(callback, f"خطا در تأیید سفارش: {error_msg}", show_alert=True)
     
     await callback.answer()
 
@@ -1512,11 +1515,12 @@ async def reject_order_with_reason(callback: CallbackQuery):
             ])
         )
         
-        logger.info(f"Order {order_id} rejected by admin {callback.from_user.id}")
-        
-    except Exception as e:
-        logger.error(f"Error rejecting order {order_id}: {e}")
-        await callback.answer(f"خطا در رد سفارش: {str(e)}", show_alert=True)
+                  logger.info(f"Order {order_id} rejected by admin {callback.from_user.id}")
+          
+      except Exception as e:
+          logger.error(f"Error rejecting order {order_id}: {e}")
+          error_msg = truncate_error(e)
+          await safe_callback_answer(callback, f"خطا در رد سفارش: {error_msg}", show_alert=True)
     
     await callback.answer()
 
