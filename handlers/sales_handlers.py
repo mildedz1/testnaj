@@ -1767,13 +1767,18 @@ async def select_customer_payment_type(callback: CallbackQuery, state: FSMContex
                 details = json.loads(selected_method['payment_details'])
                 cards = details.get('cards', [])
                 if cards:
-                    # Use first card
-                    card = cards[0]
-                    card_info = format_card_info(
-                        card.get('number', ''),
-                        card.get('holder', ''),
-                        card.get('bank', '')
-                    )
+                    # Show all cards
+                    card_info = ""
+                    for i, card in enumerate(cards, 1):
+                        if len(cards) > 1:
+                            card_info += f"**💳 کارت {i}:**\n"
+                        card_info += format_card_info(
+                            card.get('number', ''),
+                            card.get('holder', ''),
+                            card.get('bank', '')
+                        )
+                        if i < len(cards):
+                            card_info += "\n\n"
                 else:
                     card_info = "❌ اطلاعات کارت موجود نیست"
             except:
@@ -1802,12 +1807,17 @@ async def select_customer_payment_type(callback: CallbackQuery, state: FSMContex
                 details = json.loads(selected_method['payment_details'])
                 wallets = details.get('wallets', [])
                 if wallets:
-                    # Use first wallet
-                    wallet = wallets[0]
-                    crypto_info = format_crypto_address(
-                        wallet.get('address', ''),
-                        wallet.get('currency', '')
-                    )
+                    # Show all wallets
+                    crypto_info = ""
+                    for i, wallet in enumerate(wallets, 1):
+                        if len(wallets) > 1:
+                            crypto_info += f"**🪙 آدرس {i}:**\n"
+                        crypto_info += format_crypto_address(
+                            wallet.get('address', ''),
+                            wallet.get('currency', '')
+                        )
+                        if i < len(wallets):
+                            crypto_info += "\n\n"
                 else:
                     crypto_info = "❌ اطلاعات کیف‌پول موجود نیست"
             except:
