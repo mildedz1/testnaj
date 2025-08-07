@@ -736,26 +736,39 @@ async def product_edit_value_received(message: Message, state: FSMContext):
             update_data['price'] = price
             
         elif field == "users":
-            users = int(new_value)
-            if users < 1:
-                await message.answer("❌ تعداد کاربران باید حداقل ۱ باشد.")
-                return
-            update_data['max_users'] = users
+            # Check for unlimited input
+            if new_value.lower() in ['نامحدود', 'unlimited', '-1', '0']:
+                update_data['max_users'] = -1
+            else:
+                users = int(new_value)
+                if users < 1:
+                    await message.answer("❌ تعداد کاربران باید حداقل ۱ باشد یا 'نامحدود' بنویسید.")
+                    return
+                update_data['max_users'] = users
             
         elif field == "traffic":
-            traffic_gb = float(new_value)
-            if traffic_gb < 0.1:
-                await message.answer("❌ حجم ترافیک باید حداقل ۰.۱ گیگابایت باشد.")
-                return
-            update_data['max_traffic'] = int(traffic_gb * 1024 * 1024 * 1024)
+            # Check for unlimited input
+            if new_value.lower() in ['نامحدود', 'unlimited', '-1', '0']:
+                update_data['max_traffic'] = -1
+            else:
+                traffic_gb = float(new_value)
+                if traffic_gb < 0.1:
+                    await message.answer("❌ حجم ترافیک باید حداقل ۰.۱ گیگابایت باشد یا 'نامحدود' بنویسید.")
+                    return
+                update_data['max_traffic'] = int(traffic_gb * 1024 * 1024 * 1024)
             
         elif field == "time":
-            days = int(new_value)
-            if days < 1:
-                await message.answer("❌ مدت زمان باید حداقل ۱ روز باشد.")
-                return
-            update_data['max_time'] = days * 24 * 3600
-            update_data['validity_days'] = days
+            # Check for unlimited input
+            if new_value.lower() in ['نامحدود', 'unlimited', '-1', '0']:
+                update_data['max_time'] = -1
+                update_data['validity_days'] = -1
+            else:
+                days = int(new_value)
+                if days < 1:
+                    await message.answer("❌ مدت زمان باید حداقل ۱ روز باشد یا 'نامحدود' بنویسید.")
+                    return
+                update_data['max_time'] = days * 24 * 3600
+                update_data['validity_days'] = days
             
         elif field == "description":
             update_data['description'] = new_value
