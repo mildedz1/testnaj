@@ -446,6 +446,7 @@ async def handle_extension_payment_screenshot(message: Message, state: FSMContex
 @extension_router.callback_query(F.data.startswith("approve_ext_req_"))
 async def approve_extension_request(callback: CallbackQuery):
     """Approve an extension request and update admin limits."""
+    logger.info(f"approve_extension_request called with data: {callback.data}")
     if callback.from_user.id not in config.SUDO_ADMINS:
         await callback.answer("شما مجاز به این عمل نیستید.", show_alert=True)
         return

@@ -498,7 +498,7 @@ async def add_payment_card_number(message: Message, state: FSMContext):
     await state.update_data(card_number=card_number)
     
     await message.answer(
-        f"✅ **شماره کارت:** {card_number}\n\n"
+                        f"✅ **شماره کارت:** `{card_number}`\n\n"
         "**مرحله ۳ از ۴: نام صاحب کارت**\n\n"
         "لطفاً نام صاحب کارت را وارد کنید:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -559,7 +559,7 @@ async def add_payment_bank_name(message: Message, state: FSMContext):
         await message.answer(
             "✅ **روش پرداخت با موفقیت اضافه شد!**\n\n"
             f"💳 **نام:** {data['method_name']}\n"
-            f"🔢 **شماره کارت:** {data['card_number']}\n"
+                            f"🔢 **شماره کارت:** `{data['card_number']}`\n"
             f"👤 **صاحب کارت:** {data['card_holder_name']}\n"
             f"🏦 **بانک:** {bank_name}",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1395,7 +1395,7 @@ async def approve_order_and_create_panel(callback: CallbackQuery):
                          f"🆔 **شماره سفارش:** {order_id}\n"
                          f"📦 **محصول:** {order['product_name']}\n\n"
                          f"🔐 **اطلاعات ورود به پنل مرزبان:**\n"
-                         f"🌐 **آدرس پنل:** `{config.MARZBAN_URL}/dashboard`\n"
+                         f"🌐 **آدرس پنل:** `{config.MARZBAN_URL.rstrip('/')}/dashboard`\n"
                          f"👤 **نام کاربری:** `{marzban_username}`\n"
                          f"🔑 **رمز عبور:** `{marzban_password}`\n\n"
                          f"📋 **مشخصات پنل:**\n"

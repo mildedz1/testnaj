@@ -1573,13 +1573,102 @@ async def list_admins_callback(callback: CallbackQuery):
         await callback.answer("غیرمجاز", show_alert=True)
         return
     
-    text = await get_admin_list_text()
+    # Show first page of admin list
+    await show_admin_list_page(callback, page=0)
+
+@sudo_router.callback_query(F.data.startswith("admin_list_page_"))
+async def admin_list_page_callback(callback: CallbackQuery):
+    """Handle pagination for admin list."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    page = int(callback.data.split("_")[3])
+    await show_admin_list_page(callback, page)
+
+async def show_admin_list_page(callback: CallbackQuery, page: int = 0):
+    """Show a specific page of admin list."""
+    ADMINS_PER_PAGE = 4  # Show 4 admins per page for list view
+    
+    admins = await db.get_all_admins()
+    
+    if not admins:
+        await callback.message.edit_text(
+            "❌ هیچ ادمینی یافت نشد.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+            ])
+        )
+        await callback.answer()
+        return
+    
+    # Group admins by user_id to show multiple panels per user
+    user_panels = {}
+    for admin in admins:
+        if admin.user_id not in user_panels:
+            user_panels[admin.user_id] = []
+        user_panels[admin.user_id].append(admin)
+    
+    user_ids = list(user_panels.keys())
+    total_users = len(user_ids)
+    total_pages = (total_users + ADMINS_PER_PAGE - 1) // ADMINS_PER_PAGE
+    
+    if page >= total_pages:
+        page = 0
+    
+    start_idx = page * ADMINS_PER_PAGE
+    end_idx = min(start_idx + ADMINS_PER_PAGE, total_users)
+    
+    text = f"📋 لیست ادمین‌ها (صفحه {page + 1} از {total_pages}):\n\n"
+    
+    counter = start_idx + 1
+    for i in range(start_idx, end_idx):
+        user_id = user_ids[i]
+        user_admins = user_panels[user_id]
+        
+        text += f"{counter}. 👨‍💼 کاربر ID: {user_id}\n"
+        
+        for j, admin in enumerate(user_admins, 1):
+            status = "✅ فعال" if admin.is_active else "❌ غیرفعال"
+            panel_name = admin.admin_name or f"پنل {j}"
+            
+            text += f"   🔹 {panel_name} {status}\n"
+            text += f"      🆔 پنل ID: {admin.id}\n"
+            text += f"      👤 نام کاربری مرزبان: `{admin.marzban_username or 'نامشخص'}`\n"
+            text += f"      🏷️ نام تلگرام: {admin.username or 'نامشخص'}\n"
+            
+            # Handle unlimited values in display
+            max_users_display = "نامحدود" if admin.max_users == -1 else str(admin.max_users)
+            text += f"      👥 حداکثر کاربر: {max_users_display}\n"
+            text += f"      📅 تاریخ ایجاد: {admin.created_at.strftime('%Y-%m-%d %H:%M') if admin.created_at else 'نامشخص'}\n"
+            
+            if not admin.is_active and admin.deactivated_reason:
+                text += f"      ❌ دلیل غیرفعالی: {admin.deactivated_reason}\n"
+            
+            text += "\n"
+        
+        counter += 1
+        text += "\n"
+    
+    # Create pagination buttons
+    buttons = []
+    
+    # Navigation buttons
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(text="⬅️ قبلی", callback_data=f"admin_list_page_{page-1}"))
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton(text="➡️ بعدی", callback_data=f"admin_list_page_{page+1}"))
+    
+    if nav_buttons:
+        buttons.append(nav_buttons)
+    
+    # Back button
+    buttons.append([InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")])
     
     await callback.message.edit_text(
         text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
-        ])
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
     await callback.answer()
 
@@ -1591,13 +1680,133 @@ async def admin_status_callback(callback: CallbackQuery):
         await callback.answer("غیرمجاز", show_alert=True)
         return
     
-    text = await get_admin_status_text()
+    # Show first page of admin status
+    await show_admin_status_page(callback, page=0)
+
+@sudo_router.callback_query(F.data.startswith("admin_status_page_"))
+async def admin_status_page_callback(callback: CallbackQuery):
+    """Handle pagination for admin status."""
+    if callback.from_user.id not in config.SUDO_ADMINS:
+        await callback.answer("غیرمجاز", show_alert=True)
+        return
+    
+    page = int(callback.data.split("_")[3])
+    await show_admin_status_page(callback, page)
+
+async def show_admin_status_page(callback: CallbackQuery, page: int = 0):
+    """Show a specific page of admin status."""
+    ADMINS_PER_PAGE = 3  # Show 3 admins per page to avoid long messages
+    
+    admins = await db.get_all_admins()
+    
+    if not admins:
+        await callback.message.edit_text(
+            "❌ هیچ ادمینی یافت نشد.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
+            ])
+        )
+        await callback.answer()
+        return
+    
+    # Group admins by user_id to show multiple panels per user
+    user_panels = {}
+    for admin in admins:
+        if admin.user_id not in user_panels:
+            user_panels[admin.user_id] = []
+        user_panels[admin.user_id].append(admin)
+    
+    user_ids = list(user_panels.keys())
+    total_users = len(user_ids)
+    total_pages = (total_users + ADMINS_PER_PAGE - 1) // ADMINS_PER_PAGE
+    
+    if page >= total_pages:
+        page = 0
+    
+    start_idx = page * ADMINS_PER_PAGE
+    end_idx = min(start_idx + ADMINS_PER_PAGE, total_users)
+    
+    text = f"📊 وضعیت ادمین‌ها (صفحه {page + 1} از {total_pages}):\n\n"
+    
+    for i in range(start_idx, end_idx):
+        user_id = user_ids[i]
+        user_admins = user_panels[user_id]
+        
+        text += f"👨‍💼 کاربر ID: {user_id}\n"
+        
+        for j, admin in enumerate(user_admins, 1):
+            status = "✅ فعال" if admin.is_active else "❌ غیرفعال"
+            panel_name = admin.admin_name or f"پنل {j}"
+            
+            text += f"   🔹 {panel_name} ({admin.marzban_username}) {status}\n"
+            
+            # Get admin stats (simplified for pagination)
+            try:
+                if admin.is_active and admin.marzban_username and admin.marzban_password:
+                    admin_api = await marzban_api.create_admin_api(admin.marzban_username, admin.marzban_password)
+                    admin_stats = await admin_api.get_admin_stats()
+                    
+                    # Calculate usage percentages with unlimited handling
+                    user_percentage = (admin_stats.total_users / admin.max_users * 100) if admin.max_users > 0 else 0
+                    traffic_percentage = (admin_stats.total_traffic_used / admin.max_total_traffic * 100) if admin.max_total_traffic > 0 else 0
+                    time_percentage = (admin_stats.total_time_used / admin.max_total_time * 100) if admin.max_total_time > 0 else 0
+                    
+                    # Handle unlimited values in display
+                    users_display = f"{admin_stats.total_users}/{'نامحدود' if admin.max_users == -1 else admin.max_users}"
+                    traffic_display = f"{await format_traffic_size(admin_stats.total_traffic_used)}/{'نامحدود' if admin.max_total_traffic == -1 else await format_traffic_size(admin.max_total_traffic)}"
+                    time_display = f"{await format_time_duration(admin_stats.total_time_used)}/{'نامحدود' if admin.max_total_time == -1 else await format_time_duration(admin.max_total_time)}"
+                    
+                    text += f"      👥 کاربران: {users_display}"
+                    if admin.max_users != -1:
+                        text += f" ({user_percentage:.1f}%)"
+                    text += "\n"
+                    
+                    text += f"      📊 ترافیک: {traffic_display}"
+                    if admin.max_total_traffic != -1:
+                        text += f" ({traffic_percentage:.1f}%)"
+                    text += "\n"
+                    
+                    text += f"      ⏱️ زمان: {time_display}"
+                    if admin.max_total_time != -1:
+                        text += f" ({time_percentage:.1f}%)"
+                    text += "\n"
+                    
+                    # Show warning if approaching limits (only for non-unlimited)
+                    if any(p >= 80 for p in [user_percentage, traffic_percentage, time_percentage] if p > 0):
+                        text += f"      ⚠️ نزدیک به محدودیت!\n"
+                        
+                elif not admin.is_active:
+                    text += f"      ❌ غیرفعال"
+                    if admin.deactivated_reason:
+                        text += f" - {admin.deactivated_reason}"
+                    text += "\n"
+                else:
+                    text += f"      ❌ اطلاعات احراز هویت ناکامل\n"
+                    
+            except Exception as e:
+                text += f"      ❌ خطا در دریافت آمار: {str(e)[:30]}...\n"
+        
+        text += "\n"
+    
+    # Create pagination buttons
+    buttons = []
+    
+    # Navigation buttons
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(text="⬅️ قبلی", callback_data=f"admin_status_page_{page-1}"))
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton(text="➡️ بعدی", callback_data=f"admin_status_page_{page+1}"))
+    
+    if nav_buttons:
+        buttons.append(nav_buttons)
+    
+    # Back button
+    buttons.append([InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")])
     
     await callback.message.edit_text(
         text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=config.BUTTONS["back"], callback_data="back_to_main")]
-        ])
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
     await callback.answer()
 
